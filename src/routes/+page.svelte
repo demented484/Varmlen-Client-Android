@@ -6,6 +6,7 @@
   let showImport = $state(false);
   let subUrl = $state("");
   let importError = $state<string | null>(null);
+  let openMenuFor = $state<string | null>(null);
 
   onMount(() => subs.init());
 
@@ -126,29 +127,50 @@
             <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" />
           </svg>
         </button>
-        <button class="head-btn" aria-label="Subscription menu">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
-          </svg>
-        </button>
+        <div class="menu-wrap">
+          <button
+            class="head-btn"
+            aria-label="Subscription menu"
+            onclick={() => (openMenuFor = openMenuFor === sub.id ? null : sub.id)}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
+            </svg>
+          </button>
+          {#if openMenuFor === sub.id}
+            <div class="menu" role="menu">
+              <button
+                role="menuitem"
+                onclick={() => { subs.remove(sub.id); openMenuFor = null; }}
+                class="menu-item danger"
+              >Remove subscription</button>
+            </div>
+          {/if}
+        </div>
       </header>
 
       <div class="sub-traffic">
         <button class="info-dot" aria-label="Subscription info">i</button>
         <div class="traffic-bar">
-          <span class="traffic-text">{sub.trafficUsed}/{sub.trafficTotal}</span>
+          <span class="traffic-text">{subs.trafficText(sub)}</span>
         </div>
-        {#if sub.telegramUrl}
-          <button class="tg-btn" aria-label="Open Telegram">
+        {#if sub.supportUrl}
+          <a
+            class="tg-btn"
+            href={sub.supportUrl}
+            target="_blank"
+            rel="noopener"
+            aria-label="Open support"
+          >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
               <path d="M9.04 15.78L8.7 19.2c.41 0 .59-.18.81-.39l1.95-1.86 4.04 2.96c.74.41 1.27.19 1.46-.69l2.65-12.4c.23-1.05-.38-1.46-1.1-1.2L3.5 9.84c-1.02.4-1.01.97-.17 1.23l4.04 1.26 9.4-5.92c.44-.27.85-.12.52.18z" />
             </svg>
-          </button>
+          </a>
         {/if}
       </div>
 
-      {#if sub.expiresAt}
-        <div class="expires muted small">Expires: {sub.expiresAt}</div>
+      {#if subs.expiresText(sub)}
+        <div class="expires muted small">Expires: {subs.expiresText(sub)}</div>
       {/if}
 
       {#if !sub.collapsed}
@@ -165,8 +187,12 @@
                   <div class="srv-name">{srv.name}</div>
                   <div class="srv-tr dim">{srv.transport}</div>
                 </div>
-                <span class="srv-ping muted">
-                  {srv.pingMs !== null ? `${srv.pingMs} ms` : "n/d"}
+                <span class="srv-ping muted" class:pinging={srv.pinging}>
+                  {srv.pinging
+                    ? "…"
+                    : srv.pingMs !== null
+                      ? `${srv.pingMs} ms`
+                      : "n/d"}
                 </span>
                 <svg width="16" height="16" viewBox="0 0 24 24" class="chev" aria-hidden="true">
                   <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
@@ -429,6 +455,38 @@
     color: var(--text);
   }
 
+  .menu-wrap {
+    position: relative;
+  }
+  .menu {
+    position: absolute;
+    top: 34px;
+    right: 0;
+    min-width: 200px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+    padding: 4px;
+    z-index: 50;
+  }
+  .menu-item {
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .menu-item:hover {
+    background: var(--bg-elev-3);
+  }
+  .menu-item.danger {
+    color: var(--danger);
+  }
+
   .sub-traffic {
     display: flex;
     align-items: center;
@@ -553,6 +611,14 @@
   .srv-ping {
     font-variant-numeric: tabular-nums;
     font-size: 12px;
+  }
+  .srv-ping.pinging {
+    color: var(--text-dim);
+    animation: blink 1s ease-in-out infinite;
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 1; }
   }
   .chev {
     color: var(--text-muted);

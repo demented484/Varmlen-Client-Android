@@ -1,5 +1,13 @@
 import { browser } from "$app/environment";
-import { fetchSubscription, guessFlag, type VlessServer } from "$lib/api";
+import {
+  fetchSubscription,
+  pingTcp,
+  guessFlag,
+  formatBytes,
+  formatExpires,
+  type ImportResult,
+  type VlessServer,
+} from "$lib/api";
 
 export interface ServerEntry {
   id: string;
@@ -7,6 +15,7 @@ export interface ServerEntry {
   name: string;
   transport: string;
   pingMs: number | null;
+  pinging: boolean;
   raw: VlessServer;
 }
 
@@ -16,10 +25,13 @@ export interface Subscription {
   url: string;
   importedAt: string; // ISO
   updateIntervalHours: number;
-  trafficUsed: string;
-  trafficTotal: string;
-  expiresAt: string | null;
-  telegramUrl: string | null;
+  /** Bytes used (upload + download). */
+  usedBytes: number;
+  /** Total quota in bytes; 0 = unlimited. */
+  totalBytes: number;
+  /** Unix seconds, or null when no expiry was sent. */
+  expiresAtUnix: number | null;
+  supportUrl: string | null;
   servers: ServerEntry[];
   collapsed: boolean;
 }
@@ -59,13 +71,14 @@ function toServerEntry(s: VlessServer): ServerEntry {
     name: s.label,
     transport: transportSummary(s),
     pingMs: null,
+    pinging: false,
     raw: s,
   };
 }
 
-function deriveSubName(servers: VlessServer[], url: string): string {
-  // Try the most common label like "AegisVPN | Finland" → "AegisVPN".
-  for (const s of servers) {
+function deriveSubName(result: ImportResult, url: string): string {
+  if (result.meta.title) return result.meta.title;
+  for (const s of result.servers) {
     const left = s.label.split(/[|·•—-]/)[0]?.trim();
     if (left && left.length > 1 && left.length < 24) return left;
   }
@@ -132,26 +145,40 @@ class SubsStore {
     this.persist();
   }
 
+  trafficText(sub: Subscription): string {
+    const used = formatBytes(sub.usedBytes);
+    const total = sub.totalBytes > 0 ? formatBytes(sub.totalBytes) : "∞";
+    return `${used}/${total}`;
+  }
+
+  expiresText(sub: Subscription): string | null {
+    return formatExpires(sub.expiresAtUnix);
+  }
+
   async importFromUrl(url: string): Promise<void> {
     const trimmed = url.trim();
     if (!trimmed) throw new Error("empty url");
     this.importing = true;
     try {
-      const parsed = await fetchSubscription(trimmed);
-      if (parsed.length === 0) {
+      const result = await fetchSubscription(trimmed);
+      if (result.servers.length === 0) {
         throw new Error("no servers found in this subscription");
       }
-      const servers = parsed.map(toServerEntry);
+      const servers = result.servers.map(toServerEntry);
+      const totalBytes = result.meta.total_bytes ?? 0;
+      const usedBytes =
+        (result.meta.upload_bytes ?? 0) + (result.meta.download_bytes ?? 0);
+
       const sub: Subscription = {
         id: crypto.randomUUID(),
-        name: deriveSubName(parsed, trimmed),
+        name: deriveSubName(result, trimmed),
         url: trimmed,
         importedAt: new Date().toISOString(),
-        updateIntervalHours: 12,
-        trafficUsed: "0B",
-        trafficTotal: "∞",
-        expiresAt: null,
-        telegramUrl: null,
+        updateIntervalHours: result.meta.update_interval_hours ?? 12,
+        usedBytes,
+        totalBytes,
+        expiresAtUnix: result.meta.expires_at_unix,
+        supportUrl: result.meta.support_url,
         servers,
         collapsed: false,
       };
@@ -160,6 +187,8 @@ class SubsStore {
         this.selectedServerId = servers[0].id;
       }
       this.persist();
+      // Ping in the background; don't block the import dialog on it.
+      void this.pingAll(sub.id);
     } finally {
       this.importing = false;
     }
@@ -170,22 +199,66 @@ class SubsStore {
     if (idx < 0) return;
     const sub = this.list[idx];
     try {
-      const parsed = await fetchSubscription(sub.url);
-      if (parsed.length === 0) return;
+      const result = await fetchSubscription(sub.url);
+      if (result.servers.length === 0) return;
+      const totalBytes = result.meta.total_bytes ?? sub.totalBytes;
+      const usedBytes =
+        (result.meta.upload_bytes ?? 0) + (result.meta.download_bytes ?? 0);
       this.list = this.list.map((s) =>
         s.id === subId
-          ? { ...s, servers: parsed.map(toServerEntry), importedAt: new Date().toISOString() }
+          ? {
+              ...s,
+              name: result.meta.title ?? s.name,
+              servers: result.servers.map(toServerEntry),
+              updateIntervalHours:
+                result.meta.update_interval_hours ?? s.updateIntervalHours,
+              usedBytes,
+              totalBytes,
+              expiresAtUnix: result.meta.expires_at_unix ?? s.expiresAtUnix,
+              supportUrl: result.meta.support_url ?? s.supportUrl,
+              importedAt: new Date().toISOString(),
+            }
           : s,
       );
       this.persist();
+      void this.pingAll(subId);
     } catch (e) {
       console.error("refresh failed:", e);
     }
   }
 
-  pingAll(_subId: string): Promise<void> {
-    // TODO: invoke('ping_all_servers', { id })
-    return Promise.resolve();
+  /** Re-ping every server in a subscription. Updates `pingMs` in place. */
+  async pingAll(subId: string): Promise<void> {
+    const sub = this.list.find((s) => s.id === subId);
+    if (!sub) return;
+    // mark all as pinging upfront so the UI dims their values
+    this.list = this.list.map((s) =>
+      s.id === subId
+        ? { ...s, servers: s.servers.map((sv) => ({ ...sv, pinging: true })) }
+        : s,
+    );
+
+    await Promise.all(
+      sub.servers.map(async (sv) => {
+        let pingMs: number | null = null;
+        try {
+          pingMs = await pingTcp(sv.raw.host, sv.raw.port);
+        } catch {
+          pingMs = null;
+        }
+        this.list = this.list.map((s) =>
+          s.id === subId
+            ? {
+                ...s,
+                servers: s.servers.map((x) =>
+                  x.id === sv.id ? { ...x, pingMs, pinging: false } : x,
+                ),
+              }
+            : s,
+        );
+      }),
+    );
+    this.persist();
   }
 }
 

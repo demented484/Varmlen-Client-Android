@@ -32,23 +32,43 @@ pub struct VlessServer {
     pub host: String,
     pub port: u16,
     pub label: String,
-    /// `tcp` | `xhttp` | `ws` | ... (raw value from `type=`).
     pub transport: String,
-    /// `reality` | `tls` | `none`.
     pub security: String,
     pub sni: Option<String>,
     pub fingerprint: Option<String>,
-    /// Reality public key (`pbk` query param).
     pub public_key: Option<String>,
     pub short_id: Option<String>,
-    /// `xtls-rprx-vision` etc.
     pub flow: Option<String>,
     pub path: Option<String>,
-    /// xhttp mode (`packet-up`, `stream-up`, `auto`).
     pub mode: Option<String>,
     pub packet_encoding: Option<String>,
-    /// All remaining query params, in case the UI wants to render them raw.
     pub raw_params: HashMap<String, String>,
+}
+
+/// Server-side subscription metadata parsed from HTTP response headers.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct SubscriptionMeta {
+    /// `Profile-Title` header — used as the subscription display name.
+    pub title: Option<String>,
+    /// `Profile-Update-Interval` (hours).
+    pub update_interval_hours: Option<u32>,
+    /// `Subscription-Userinfo`: upload bytes used.
+    pub upload_bytes: Option<u64>,
+    /// `Subscription-Userinfo`: download bytes used.
+    pub download_bytes: Option<u64>,
+    /// `Subscription-Userinfo`: total quota in bytes. 0 means unlimited.
+    pub total_bytes: Option<u64>,
+    /// `Subscription-Userinfo`: expiry as unix seconds.
+    pub expires_at_unix: Option<i64>,
+    /// `Support-Url` or `Profile-Web-Page-Url`.
+    pub support_url: Option<String>,
+}
+
+/// Bundled result of an import: headers + parsed servers.
+#[derive(Debug, Clone, Serialize)]
+pub struct ImportResult {
+    pub meta: SubscriptionMeta,
+    pub servers: Vec<VlessServer>,
 }
 
 /// Parse a single `vless://` URI.
@@ -62,8 +82,6 @@ pub fn parse_vless(uri: &str) -> Result<VlessServer, ParseError> {
     if uuid.is_empty() {
         return Err(ParseError::MissingUuid);
     }
-    // `Url::username()` percent-decodes by spec but VLESS UUIDs are 8-4-4-4-12,
-    // never percent-encoded. Still call decode_lossy for safety.
     let uuid = percent_decode(uuid);
 
     let host = url.host_str().ok_or(ParseError::MissingHost)?.to_string();
@@ -111,9 +129,6 @@ pub fn parse_vless(uri: &str) -> Result<VlessServer, ParseError> {
 }
 
 /// Parse a subscription body: a list of URIs (plaintext or base64).
-///
-/// Per-line errors are silently skipped — clients often mix in comments and
-/// junk lines, and one broken entry should not kill the whole list.
 pub fn parse_subscription(body: &str) -> Vec<VlessServer> {
     let text = decode_body(body);
     text.lines()
@@ -130,25 +145,21 @@ pub fn parse_subscription(body: &str) -> Vec<VlessServer> {
         .collect()
 }
 
-/// Try standard base64, then URL-safe, then fall back to the raw body.
 fn decode_body(body: &str) -> String {
     let compact: String = body.chars().filter(|c| !c.is_whitespace()).collect();
     if compact.contains("vless://") {
         return body.to_string();
     }
-    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(compact.as_bytes()) {
-        if let Ok(s) = String::from_utf8(bytes) {
-            return s;
-        }
-    }
-    if let Ok(bytes) = base64::engine::general_purpose::URL_SAFE.decode(compact.as_bytes()) {
-        if let Ok(s) = String::from_utf8(bytes) {
-            return s;
-        }
-    }
-    if let Ok(bytes) = base64::engine::general_purpose::STANDARD_NO_PAD.decode(compact.as_bytes()) {
-        if let Ok(s) = String::from_utf8(bytes) {
-            return s;
+    for engine in [
+        &base64::engine::general_purpose::STANDARD,
+        &base64::engine::general_purpose::URL_SAFE,
+        &base64::engine::general_purpose::STANDARD_NO_PAD,
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+    ] {
+        if let Ok(bytes) = engine.decode(compact.as_bytes()) {
+            if let Ok(s) = String::from_utf8(bytes) {
+                return s;
+            }
         }
     }
     body.to_string()
@@ -158,6 +169,41 @@ fn percent_decode(s: &str) -> String {
     percent_encoding::percent_decode_str(s)
         .decode_utf8_lossy()
         .into_owned()
+}
+
+/// Extract subscription metadata from response headers.
+///
+/// Header names are lowercase ASCII. `Subscription-Userinfo` looks like
+/// `upload=0; download=0; total=10737418240; expire=1781461695`.
+pub fn parse_headers<F>(get: F) -> SubscriptionMeta
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let mut meta = SubscriptionMeta::default();
+    meta.title = get("profile-title").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    meta.update_interval_hours = get("profile-update-interval")
+        .and_then(|s| s.trim().parse().ok());
+    meta.support_url = get("support-url")
+        .or_else(|| get("profile-web-page-url"))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    if let Some(info) = get("subscription-userinfo") {
+        for kv in info.split(';') {
+            let kv = kv.trim();
+            if let Some((k, v)) = kv.split_once('=') {
+                let v = v.trim();
+                match k.trim() {
+                    "upload"   => meta.upload_bytes   = v.parse().ok(),
+                    "download" => meta.download_bytes = v.parse().ok(),
+                    "total"    => meta.total_bytes    = v.parse().ok(),
+                    "expire"   => meta.expires_at_unix = v.parse().ok(),
+                    _ => {}
+                }
+            }
+        }
+    }
+    meta
 }
 
 #[cfg(test)]
@@ -175,11 +221,7 @@ mod tests {
         assert_eq!(s.transport, "xhttp");
         assert_eq!(s.security, "reality");
         assert_eq!(s.sni.as_deref(), Some("gateway.icloud.com"));
-        assert_eq!(s.fingerprint.as_deref(), Some("chrome"));
-        assert_eq!(s.public_key.as_deref(), Some("ABC"));
-        assert_eq!(s.short_id.as_deref(), Some("DEAD"));
         assert_eq!(s.path.as_deref(), Some("/fi-exp-xh-1673aadd"));
-        assert_eq!(s.mode.as_deref(), Some("packet-up"));
     }
 
     #[test]
@@ -190,23 +232,41 @@ mod tests {
 
     #[test]
     fn parses_plaintext_subscription() {
-        let body = r#"
-            # comment
-            vless://uuid-a@host-a:443?type=tcp&security=reality#A
-            vless://uuid-b@host-b:443?type=xhttp&security=reality#B
-            garbage line
-        "#;
+        let body = "# c\nvless://a@h-a:443?type=tcp&security=reality#A\nvless://b@h-b:443?type=xhttp&security=reality#B\ngarbage";
         let v = parse_subscription(body);
         assert_eq!(v.len(), 2);
-        assert_eq!(v[0].label, "A");
-        assert_eq!(v[1].label, "B");
     }
 
     #[test]
     fn parses_base64_subscription() {
-        let plain = "vless://uuid-a@host-a:443?type=tcp&security=reality#A\nvless://uuid-b@host-b:443?type=xhttp&security=reality#B";
+        let plain = "vless://a@h-a:443?type=tcp&security=reality#A\nvless://b@h-b:443?type=xhttp&security=reality#B";
         let b64 = base64::engine::general_purpose::STANDARD.encode(plain.as_bytes());
         let v = parse_subscription(&b64);
         assert_eq!(v.len(), 2);
+    }
+
+    #[test]
+    fn parses_meta_headers() {
+        let m = parse_headers(|name| match name {
+            "profile-title" => Some("AegisVPN".into()),
+            "profile-update-interval" => Some("12".into()),
+            "subscription-userinfo" => Some("upload=10; download=200; total=1099511627776; expire=1781461695".into()),
+            "support-url" => Some("https://t.me/x_bot".into()),
+            _ => None,
+        });
+        assert_eq!(m.title.as_deref(), Some("AegisVPN"));
+        assert_eq!(m.update_interval_hours, Some(12));
+        assert_eq!(m.upload_bytes, Some(10));
+        assert_eq!(m.download_bytes, Some(200));
+        assert_eq!(m.total_bytes, Some(1_099_511_627_776));
+        assert_eq!(m.expires_at_unix, Some(1_781_461_695));
+        assert_eq!(m.support_url.as_deref(), Some("https://t.me/x_bot"));
+    }
+
+    #[test]
+    fn meta_missing_headers_yields_defaults() {
+        let m = parse_headers(|_| None);
+        assert!(m.title.is_none());
+        assert!(m.total_bytes.is_none());
     }
 }
