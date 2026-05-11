@@ -13,10 +13,11 @@
     "windows": [
       {
         "title": "AegisVPN",
-        "width": 1100,
-        "height": 720,
-        "minWidth": 900,
-        "minHeight": 600
+        "width": 460,
+        "height": 820,
+        "minWidth": 380,
+        "minHeight": 640,
+        "resizable": true
       }
     ],
     "security": {

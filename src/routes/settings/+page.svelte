@@ -1,129 +1,187 @@
 <script lang="ts">
+  import { theme, type Theme } from "$lib/theme.svelte";
+
   let autostart = $state(false);
   let killswitch = $state(true);
   let allowLan = $state(true);
   let logLevel = $state<"warn" | "info" | "debug">("warn");
+
+  function setTheme(t: Theme) {
+    theme.set(t);
+  }
 </script>
 
-<div class="settings">
-  <header>
+<div class="page">
+  <header class="page-head">
     <h1>Settings</h1>
-    <p class="muted">Client behavior and diagnostics.</p>
   </header>
 
-  <section class="card group">
+  <section>
+    <h2>Appearance</h2>
+    <div class="card theme-card">
+      <div class="theme-row">
+        <button
+          class="theme-tile"
+          class:active={theme.current === "dark"}
+          onclick={() => setTheme("dark")}
+          aria-pressed={theme.current === "dark"}
+        >
+          <div class="swatch swatch-dark"></div>
+          <span>Dark</span>
+        </button>
+        <button
+          class="theme-tile"
+          class:active={theme.current === "light"}
+          onclick={() => setTheme("light")}
+          aria-pressed={theme.current === "light"}
+        >
+          <div class="swatch swatch-light"></div>
+          <span>Light</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section>
     <h2>General</h2>
-
-    <div class="row">
-      <div>
-        <div class="row-title">Launch on system startup</div>
-        <div class="row-sub muted">Open AegisVPN automatically after login.</div>
+    <div class="list">
+      <div class="list-row">
+        <div class="row-text">
+          <div class="row-title">Launch on system startup</div>
+          <div class="row-sub muted">Open AegisVPN automatically after login.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" bind:checked={autostart} />
+          <span class="slider"></span>
+        </label>
       </div>
-      <label class="switch">
-        <input type="checkbox" bind:checked={autostart} />
-        <span class="slider"></span>
-      </label>
-    </div>
-
-    <div class="row">
-      <div>
-        <div class="row-title">Killswitch</div>
-        <div class="row-sub muted">Block all traffic if the VPN connection drops.</div>
+      <div class="list-row">
+        <div class="row-text">
+          <div class="row-title">Killswitch</div>
+          <div class="row-sub muted">Block all traffic if the VPN connection drops.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" bind:checked={killswitch} />
+          <span class="slider"></span>
+        </label>
       </div>
-      <label class="switch">
-        <input type="checkbox" bind:checked={killswitch} />
-        <span class="slider"></span>
-      </label>
-    </div>
-
-    <div class="row">
-      <div>
-        <div class="row-title">Allow LAN traffic</div>
-        <div class="row-sub muted">Keep access to printers, NAS, and other local devices while connected.</div>
+      <div class="list-row">
+        <div class="row-text">
+          <div class="row-title">Allow LAN traffic</div>
+          <div class="row-sub muted">Keep printers, NAS, and local devices reachable.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" bind:checked={allowLan} />
+          <span class="slider"></span>
+        </label>
       </div>
-      <label class="switch">
-        <input type="checkbox" bind:checked={allowLan} />
-        <span class="slider"></span>
-      </label>
     </div>
   </section>
 
-  <section class="card group">
+  <section>
     <h2>Diagnostics</h2>
-
-    <div class="row">
-      <div>
-        <div class="row-title">Log level</div>
-        <div class="row-sub muted">Set sing-box verbosity. Use <code>debug</code> only when reporting bugs.</div>
+    <div class="list">
+      <div class="list-row">
+        <div class="row-text">
+          <div class="row-title">Log level</div>
+          <div class="row-sub muted">Use <code>debug</code> only when reporting bugs.</div>
+        </div>
+        <select bind:value={logLevel} class="small-select">
+          <option value="warn">Warn</option>
+          <option value="info">Info</option>
+          <option value="debug">Debug</option>
+        </select>
       </div>
-      <select bind:value={logLevel}>
-        <option value="warn">Warn</option>
-        <option value="info">Info</option>
-        <option value="debug">Debug</option>
-      </select>
-    </div>
-
-    <div class="row">
-      <div>
-        <div class="row-title">Open log directory</div>
-        <div class="row-sub muted">Show the folder containing connection logs.</div>
-      </div>
-      <button class="btn">Open</button>
+      <button class="list-row tappable">
+        <div class="row-text">
+          <div class="row-title">Open log directory</div>
+          <div class="row-sub muted">Show the folder containing sing-box logs.</div>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" class="chev" aria-hidden="true">
+          <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" />
+        </svg>
+      </button>
     </div>
   </section>
 
-  <section class="card group">
+  <section>
     <h2>About</h2>
-    <div class="about dim">
-      AegisVPN v0.1.0 — open-source sing-box client. AGPL-3.0.
+    <div class="card about">
+      <div>AegisVPN <span class="muted">v0.1.0</span></div>
+      <div class="muted small">Open-source sing-box client. Licensed under AGPL-3.0.</div>
     </div>
   </section>
 </div>
 
 <style>
-  .settings {
-    max-width: 720px;
-    margin: 0 auto;
+  .page {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 16px;
   }
-
-  header h1 {
-    margin: 0 0 4px;
-    font-size: 22px;
-    font-weight: 600;
-  }
-  header p {
+  .page-head h1 {
     margin: 0;
-    font-size: 13px;
+    font-size: 24px;
+    font-weight: 700;
+    padding: 4px 4px 4px;
   }
 
-  .group {
-    padding: 16px 20px;
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
   h2 {
-    margin: 0 0 12px;
-    font-size: 13px;
-    font-weight: 500;
+    margin: 0;
+    padding: 0 4px;
+    font-size: 11px;
+    font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
 
-  .row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 10px 0;
-    border-top: 1px solid var(--border);
+  .theme-card {
+    padding: 12px;
   }
-  .row:first-of-type {
-    border-top: none;
-    padding-top: 0;
+  .theme-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .theme-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+  }
+  .theme-tile.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-faint);
+  }
+  .swatch {
+    width: 100%;
+    height: 56px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .swatch-dark {
+    background: linear-gradient(135deg, #1a1a1a 50%, #2e2e2e 50%);
+  }
+  .swatch-light {
+    background: linear-gradient(135deg, #ffffff 50%, #ebebeb 50%);
   }
 
+  .row-text {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+  }
   .row-title {
     font-size: 14px;
   }
@@ -132,56 +190,30 @@
     margin-top: 2px;
   }
 
-  .switch {
-    position: relative;
-    display: inline-block;
-    width: 38px;
-    height: 22px;
-    flex-shrink: 0;
-  }
-  .switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-  .slider {
-    position: absolute;
-    inset: 0;
-    cursor: pointer;
-    background: var(--bg-elev-2);
-    border: 1px solid var(--border);
-    border-radius: 22px;
-    transition: background var(--transition), border-color var(--transition);
-  }
-  .slider::before {
-    content: "";
-    position: absolute;
-    width: 16px;
-    height: 16px;
-    left: 2px;
-    top: 2px;
-    background: var(--text-muted);
-    border-radius: 50%;
-    transition: transform var(--transition), background var(--transition);
-  }
-  .switch input:checked + .slider {
-    background: var(--accent);
-    border-color: var(--accent);
-  }
-  .switch input:checked + .slider::before {
-    background: #0a1a10;
-    transform: translateX(16px);
-  }
-
-  .about {
+  .small-select {
+    width: auto;
+    padding: 6px 10px;
     font-size: 13px;
   }
 
+  .chev {
+    color: var(--text-muted);
+  }
+
+  .about {
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .small {
+    font-size: 12px;
+  }
   code {
-    font-family: ui-monospace, "JetBrains Mono", "Cascadia Code", monospace;
-    background: var(--bg-elev);
+    font-family: ui-monospace, "JetBrains Mono", monospace;
+    background: var(--bg-elev-2);
     padding: 1px 5px;
     border-radius: 3px;
-    font-size: 0.95em;
+    font-size: 0.9em;
   }
 </style>

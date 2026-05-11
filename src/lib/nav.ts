@@ -1,15 +1,15 @@
 export interface NavItem {
   path: string;
   label: string;
-  /** Material-symbols-like outline glyph rendered inline as SVG path data. */
+  /** SVG path data for the tab icon. */
   icon: string;
 }
 
 export const NAV: NavItem[] = [
   {
     path: "/",
-    label: "Dashboard",
-    icon: "M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z",
+    label: "Connect",
+    icon: "M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm-2 14.59L5.41 12 6.83 10.59 10 13.76l7.17-7.17L18.59 8 10 16.59z",
   },
   {
     path: "/servers",
@@ -17,9 +17,9 @@ export const NAV: NavItem[] = [
     icon: "M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6zm0 9a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3zm4-7.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
   },
   {
-    path: "/rules",
-    label: "Split rules",
-    icon: "M6 3v2H4v14h6v2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2zm12 0a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2v-2h2V5h-2V3h2zm-8 4h4v2h-4V7zm-2 4h8v2H8v-2zm2 4h4v2h-4v-2z",
+    path: "/split",
+    label: "Split",
+    icon: "M3 12h6l3-4 3 4h6M3 18h6l3-4 3 4h6M3 6h6l3 4 3-4h6",
   },
   {
     path: "/settings",
