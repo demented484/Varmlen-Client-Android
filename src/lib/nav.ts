@@ -1,25 +1,20 @@
 export interface NavItem {
   path: string;
   label: string;
-  /** SVG path data for the tab icon. */
+  /** SVG path data, used inside <svg viewBox="0 0 24 24"> with fill=currentColor. */
   icon: string;
 }
 
 export const NAV: NavItem[] = [
   {
     path: "/",
-    label: "Connect",
-    icon: "M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm-2 14.59L5.41 12 6.83 10.59 10 13.76l7.17-7.17L18.59 8 10 16.59z",
-  },
-  {
-    path: "/servers",
-    label: "Servers",
-    icon: "M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6zm0 9a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3zm4-7.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
+    label: "Home",
+    icon: "M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3z",
   },
   {
     path: "/split",
     label: "Split",
-    icon: "M3 12h6l3-4 3 4h6M3 18h6l3-4 3 4h6M3 6h6l3 4 3-4h6",
+    icon: "M6 3a1 1 0 0 1 1 1v6a3 3 0 0 0 3 3h7.59l-1.3-1.3a1 1 0 1 1 1.42-1.4l3 3a1 1 0 0 1 0 1.4l-3 3a1 1 0 1 1-1.42-1.4l1.3-1.3H10a5 5 0 0 1-5-5V4a1 1 0 0 1 1-1zm12 14a1 1 0 1 1 0-2 1 1 0 0 1 0 2zM3 19a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm3 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2z",
   },
   {
     path: "/settings",

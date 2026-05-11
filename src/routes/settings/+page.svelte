@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import { theme, type Theme } from "$lib/theme.svelte";
 
   let autostart = $state(false);
@@ -11,11 +12,11 @@
   }
 </script>
 
-<div class="page">
-  <header class="page-head">
-    <h1>Settings</h1>
-  </header>
+<header class="topbar">
+  <h1>Settings</h1>
+</header>
 
+<main class="scroll">
   <section>
     <h2>Appearance</h2>
     <div class="card theme-card">
@@ -39,6 +40,21 @@
           <span>Light</span>
         </button>
       </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Routing</h2>
+    <div class="list">
+      <button class="list-row tappable" onclick={() => goto("/split")}>
+        <div class="row-text">
+          <div class="row-title">Split tunneling</div>
+          <div class="row-sub muted">Per-app and per-website rules</div>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" class="chev" aria-hidden="true">
+          <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" />
+        </svg>
+      </button>
     </div>
   </section>
 
@@ -111,25 +127,35 @@
       <div class="muted small">Open-source sing-box client. Licensed under AGPL-3.0.</div>
     </div>
   </section>
-</div>
+</main>
 
 <style>
-  .page {
+  .topbar {
+    display: flex;
+    align-items: center;
+    padding: 14px 16px 6px;
+    flex-shrink: 0;
+  }
+  .topbar h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  .scroll {
+    position: absolute;
+    inset: 56px 0 0 0;
+    overflow-y: auto;
+    padding: 0 14px 24px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
-  }
-  .page-head h1 {
-    margin: 0;
-    font-size: 24px;
-    font-weight: 700;
-    padding: 4px 4px 4px;
+    gap: 14px;
   }
 
   section {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
   h2 {
     margin: 0;
@@ -170,35 +196,23 @@
     border-radius: 8px;
     border: 1px solid var(--border);
   }
-  .swatch-dark {
-    background: linear-gradient(135deg, #1a1a1a 50%, #2e2e2e 50%);
-  }
-  .swatch-light {
-    background: linear-gradient(135deg, #ffffff 50%, #ebebeb 50%);
-  }
+  .swatch-dark { background: linear-gradient(135deg, #1a1a1a 50%, #2e2e2e 50%); }
+  .swatch-light { background: linear-gradient(135deg, #ffffff 50%, #ebebeb 50%); }
 
   .row-text {
     flex: 1;
     min-width: 0;
     text-align: left;
   }
-  .row-title {
-    font-size: 14px;
-  }
-  .row-sub {
-    font-size: 12px;
-    margin-top: 2px;
-  }
+  .row-title { font-size: 14px; }
+  .row-sub { font-size: 12px; margin-top: 2px; }
 
   .small-select {
     width: auto;
     padding: 6px 10px;
     font-size: 13px;
   }
-
-  .chev {
-    color: var(--text-muted);
-  }
+  .chev { color: var(--text-muted); }
 
   .about {
     padding: 14px 16px;
@@ -206,9 +220,7 @@
     flex-direction: column;
     gap: 4px;
   }
-  .small {
-    font-size: 12px;
-  }
+  .small { font-size: 12px; }
   code {
     font-family: ui-monospace, "JetBrains Mono", monospace;
     background: var(--bg-elev-2);

@@ -1,73 +1,32 @@
 <script lang="ts">
-  type Mode = "selective" | "general";
+  import { onMount } from "svelte";
+  import { split, type Mode } from "$lib/split.svelte";
+
   type Tab = "apps" | "websites";
-
-  interface AppEntry {
-    id: string;
-    name: string;
-    icon: string; // emoji placeholder until we wire .desktop scanning
-    enabled: boolean;
-  }
-  interface SiteEntry {
-    id: string;
-    pattern: string;
-    enabled: boolean;
-  }
-
   let tab = $state<Tab>("apps");
-  let mode = $state<Mode>("selective");
 
   let appQuery = $state("");
-  let apps = $state<AppEntry[]>([
-    { id: "telegram", name: "Telegram",   icon: "💬", enabled: true },
-    { id: "discord",  name: "Discord",    icon: "🎮", enabled: true },
-    { id: "firefox",  name: "Firefox",    icon: "🦊", enabled: false },
-    { id: "chrome",   name: "Chromium",   icon: "🌐", enabled: false },
-    { id: "spotify",  name: "Spotify",    icon: "🎵", enabled: false },
-    { id: "steam",    name: "Steam",      icon: "🎯", enabled: true },
-    { id: "obs",      name: "OBS Studio", icon: "📹", enabled: false },
-    { id: "vscode",   name: "VS Code",    icon: "📝", enabled: false },
-    { id: "sber",     name: "СберБанк",   icon: "🏦", enabled: false },
-  ]);
-
   let siteDraft = $state("");
-  let sites = $state<SiteEntry[]>([
-    { id: "1", pattern: "*.ru",            enabled: true },
-    { id: "2", pattern: "instagram.com",   enabled: true },
-    { id: "3", pattern: "sberbank.ru",     enabled: true },
-    { id: "4", pattern: "*.gov.ru",        enabled: true },
-  ]);
+  let appDraftName = $state("");
+  let appDraftId = $state("");
+  let showAddApp = $state(false);
+
+  onMount(() => split.init());
 
   const filteredApps = $derived(
-    apps.filter((a) =>
+    split.apps.filter((a) =>
       a.name.toLowerCase().includes(appQuery.trim().toLowerCase()),
     ),
   );
 
   const enabledCount = $derived(
     tab === "apps"
-      ? apps.filter((a) => a.enabled).length
-      : sites.filter((s) => s.enabled).length,
+      ? split.apps.filter((a) => a.enabled).length
+      : split.sites.filter((s) => s.enabled).length,
   );
 
-  function toggleApp(id: string) {
-    apps = apps.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a));
-  }
-  function toggleSite(id: string) {
-    sites = sites.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s));
-  }
-  function addSite() {
-    const v = siteDraft.trim();
-    if (!v) return;
-    sites = [...sites, { id: crypto.randomUUID(), pattern: v, enabled: true }];
-    siteDraft = "";
-  }
-  function removeSite(id: string) {
-    sites = sites.filter((s) => s.id !== id);
-  }
-
   const modeDescription = $derived(
-    mode === "selective"
+    split.mode === "selective"
       ? tab === "apps"
         ? "VPN works only for the selected apps. Everything else stays direct."
         : "VPN works only on the selected websites. Everything else stays direct."
@@ -75,16 +34,31 @@
         ? "VPN works for all apps except those selected (which stay direct)."
         : "VPN works on all websites except those selected (which stay direct).",
   );
+
+  function setMode(m: Mode) {
+    split.setMode(m);
+  }
+
+  function submitAddApp() {
+    const id = appDraftId.trim();
+    const name = appDraftName.trim() || id;
+    if (!id) return;
+    split.addApp({ id, name, icon: "📦" });
+    appDraftId = "";
+    appDraftName = "";
+    showAddApp = false;
+  }
 </script>
 
-<div class="page">
-  <header class="page-head">
-    <h1>Split tunneling</h1>
-  </header>
+<header class="topbar">
+  <h1>Split tunneling</h1>
+</header>
 
-  <div class="segmented">
-    <button class:active={tab === "apps"} onclick={() => (tab = "apps")}>Apps</button>
-    <button class:active={tab === "websites"} onclick={() => (tab = "websites")}>Websites</button>
+<div class="page">
+
+  <div class="segmented" role="tablist">
+    <button class:active={tab === "apps"} onclick={() => (tab = "apps")} role="tab" aria-selected={tab === "apps"}>Apps</button>
+    <button class:active={tab === "websites"} onclick={() => (tab = "websites")} role="tab" aria-selected={tab === "websites"}>Websites</button>
   </div>
 
   <div class="card mode">
@@ -93,14 +67,14 @@
       <span class="muted small">{enabledCount} active</span>
     </div>
     <label class="mode-row">
-      <input type="radio" bind:group={mode} value="selective" />
+      <input type="radio" name="mode" checked={split.mode === "selective"} onchange={() => setMode("selective")} />
       <div>
         <div class="mode-title">Selective tunneling</div>
         <div class="mode-sub muted">VPN protects only the entries you pick.</div>
       </div>
     </label>
     <label class="mode-row">
-      <input type="radio" bind:group={mode} value="general" />
+      <input type="radio" name="mode" checked={split.mode === "general"} onchange={() => setMode("general")} />
       <div>
         <div class="mode-title">General tunneling</div>
         <div class="mode-sub muted">VPN protects everything except the entries you pick.</div>
@@ -110,62 +84,119 @@
   </div>
 
   {#if tab === "apps"}
-    <input class="search" type="search" placeholder="Search installed apps" bind:value={appQuery} />
-    <div class="list">
-      {#each filteredApps as a (a.id)}
-        <div class="list-row">
-          <span class="app-icon">{a.icon}</span>
-          <div class="app-name">{a.name}</div>
-          <label class="switch">
-            <input type="checkbox" checked={a.enabled} onchange={() => toggleApp(a.id)} />
-            <span class="slider"></span>
-          </label>
-        </div>
-      {/each}
-      {#if filteredApps.length === 0}
-        <div class="list-row empty muted">No apps match the query.</div>
-      {/if}
+    <div class="apps-controls">
+      <input class="search" type="search" placeholder="Search apps" bind:value={appQuery} />
+      <button class="btn btn-primary add-app" onclick={() => (showAddApp = true)} aria-label="Add app">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" /></svg>
+      </button>
     </div>
-    <p class="hint dim">App list is a placeholder. Once the agent ships, AegisVPN will read installed apps from <code>/usr/share/applications/*.desktop</code>.</p>
+
+    {#if split.apps.length === 0}
+      <div class="empty-state">
+        <div class="empty-title">No apps yet</div>
+        <div class="muted">Tap <strong>+</strong> to add a process by its name (e.g. <code>telegram-desktop</code>, <code>firefox</code>).</div>
+      </div>
+    {:else}
+      <div class="list">
+        {#each filteredApps as a (a.id)}
+          <div class="list-row">
+            <span class="app-icon">{a.icon}</span>
+            <div class="app-text">
+              <div class="app-name">{a.name}</div>
+              <div class="app-id dim">{a.id}</div>
+            </div>
+            <button class="btn-ghost trash" onclick={() => split.removeApp(a.id)} aria-label="Remove">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+            </button>
+            <label class="switch">
+              <input type="checkbox" checked={a.enabled} onchange={() => split.toggleApp(a.id)} />
+              <span class="slider"></span>
+            </label>
+          </div>
+        {/each}
+        {#if filteredApps.length === 0}
+          <div class="list-row empty muted">No apps match the query.</div>
+        {/if}
+      </div>
+      <p class="hint dim">
+        Once the agent ships, AegisVPN will read installed apps from
+        <code>/usr/share/applications/*.desktop</code> automatically.
+      </p>
+    {/if}
   {:else}
-    <form class="site-add" onsubmit={(e) => { e.preventDefault(); addSite(); }}>
+    <form class="site-add" onsubmit={(e) => { e.preventDefault(); split.addSite(siteDraft); siteDraft = ""; }}>
       <input type="text" placeholder="example.com or *.example.com" bind:value={siteDraft} />
       <button class="btn btn-primary" type="submit" disabled={!siteDraft.trim()}>Add</button>
     </form>
 
-    <div class="list">
-      {#each sites as s (s.id)}
-        <div class="list-row">
-          <span class="pattern">{s.pattern}</span>
-          <button class="btn-ghost trash" onclick={() => removeSite(s.id)} aria-label="Remove">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M6 6l12 12M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-            </svg>
-          </button>
-          <label class="switch">
-            <input type="checkbox" checked={s.enabled} onchange={() => toggleSite(s.id)} />
-            <span class="slider"></span>
-          </label>
-        </div>
-      {/each}
-      {#if sites.length === 0}
-        <div class="list-row empty muted">No sites yet.</div>
-      {/if}
-    </div>
+    {#if split.sites.length === 0}
+      <div class="empty-state">
+        <div class="empty-title">No websites yet</div>
+        <div class="muted">Add a hostname (<code>example.com</code>) or a wildcard pattern (<code>*.example.com</code>).</div>
+      </div>
+    {:else}
+      <div class="list">
+        {#each split.sites as s (s.id)}
+          <div class="list-row">
+            <span class="pattern">{s.pattern}</span>
+            <button class="btn-ghost trash" onclick={() => split.removeSite(s.id)} aria-label="Remove">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+            </button>
+            <label class="switch">
+              <input type="checkbox" checked={s.enabled} onchange={() => split.toggleSite(s.id)} />
+              <span class="slider"></span>
+            </label>
+          </div>
+        {/each}
+      </div>
+    {/if}
   {/if}
 </div>
 
+{#if showAddApp}
+  <div class="modal-backdrop" onclick={() => (showAddApp = false)} role="presentation">
+    <div
+      class="modal card"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.key === "Escape" && (showAddApp = false)}
+      role="dialog"
+      tabindex="-1"
+      aria-modal="true"
+      aria-label="Add app"
+    >
+      <h2>Add app</h2>
+      <p class="muted">Process / package name. The display name is optional.</p>
+      <input type="text" placeholder="Process name (e.g. telegram-desktop)" bind:value={appDraftId} />
+      <input type="text" placeholder="Display name (optional)" bind:value={appDraftName} />
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick={() => (showAddApp = false)}>Cancel</button>
+        <button class="btn btn-primary" onclick={submitAddApp} disabled={!appDraftId.trim()}>Add</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
+  .topbar {
+    display: flex;
+    align-items: center;
+    padding: 14px 16px 6px;
+    flex-shrink: 0;
+  }
+  .topbar h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 700;
+  }
+
   .page {
+    position: absolute;
+    inset: 56px 0 0 0;
+    overflow-y: auto;
+    padding: 0 14px 24px;
     display: flex;
     flex-direction: column;
     gap: 12px;
-  }
-  .page-head h1 {
-    margin: 0;
-    font-size: 24px;
-    font-weight: 700;
-    padding: 4px 4px 4px;
   }
 
   .segmented {
@@ -216,9 +247,34 @@
     border-radius: var(--radius-sm);
   }
 
-  .search {
-    margin-bottom: 0;
+  .apps-controls {
+    display: flex;
+    gap: 8px;
   }
+  .apps-controls .search { flex: 1; }
+  .add-app {
+    width: 38px;
+    flex-shrink: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .empty-state {
+    padding: 28px 18px;
+    text-align: center;
+    background: var(--bg-elev);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .empty-title {
+    font-weight: 600;
+  }
+
   .app-icon {
     width: 30px;
     height: 30px;
@@ -230,9 +286,17 @@
     font-size: 16px;
     flex-shrink: 0;
   }
-  .app-name {
+  .app-text {
     flex: 1;
+    min-width: 0;
+  }
+  .app-name {
     font-weight: 500;
+  }
+  .app-id {
+    font-size: 11px;
+    font-family: ui-monospace, "JetBrains Mono", monospace;
+    margin-top: 1px;
   }
 
   .empty {
@@ -244,9 +308,7 @@
     display: flex;
     gap: 8px;
   }
-  .site-add input {
-    flex: 1;
-  }
+  .site-add input { flex: 1; }
 
   .pattern {
     flex: 1;
@@ -261,9 +323,7 @@
     align-items: center;
     justify-content: center;
   }
-  .trash:hover {
-    color: var(--danger);
-  }
+  .trash:hover { color: var(--danger); }
 
   .hint {
     font-size: 12px;
@@ -275,5 +335,39 @@
     padding: 1px 5px;
     border-radius: 3px;
     font-size: 0.9em;
+  }
+
+  /* modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: var(--overlay);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 100;
+    animation: fadeIn var(--transition);
+  }
+  .modal {
+    width: calc(100% - 24px);
+    margin: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    animation: slideUp 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .modal h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  .modal p { margin: 0; font-size: 13px; }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to   { transform: translateY(0); opacity: 1; }
   }
 </style>

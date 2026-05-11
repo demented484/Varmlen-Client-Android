@@ -1,7 +1,7 @@
 <script lang="ts">
   import "../app.css";
-  import { page } from "$app/state";
   import { onMount } from "svelte";
+  import { page } from "$app/state";
   import { NAV } from "$lib/nav";
   import { theme } from "$lib/theme.svelte";
 
@@ -44,21 +44,19 @@
   .content {
     flex: 1;
     min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 16px 16px 8px;
+    position: relative;
+    overflow: hidden;
   }
 
   .tabbar {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     border-top: 1px solid var(--border);
     background: var(--bg-elev);
     padding: 6px 4px 8px;
-    /* respect device safe-area on mobile */
     padding-bottom: max(8px, env(safe-area-inset-bottom));
+    flex-shrink: 0;
   }
-
   .tab {
     display: flex;
     flex-direction: column;
@@ -71,10 +69,6 @@
     transition: color var(--transition);
     border-radius: var(--radius-sm);
   }
-  .tab:hover {
-    color: var(--text);
-  }
-  .tab.active {
-    color: var(--accent);
-  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); }
 </style>
