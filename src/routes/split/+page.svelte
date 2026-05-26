@@ -19,7 +19,7 @@
   let installed = $state<InstalledApp[]>([]);
   let pickerLoading = $state(false);
 
-  const addedIds = $derived(new Set(split.currentApps.map((a) => a.id)));
+  const addedIds = $derived(new Set(split.apps.map((a) => a.id)));
   const pickerResults = $derived.by(() => {
     const q = pickerQuery.trim().toLowerCase();
     if (!q) return installed;
@@ -57,27 +57,20 @@
   }
 
   const filteredApps = $derived(
-    split.currentApps.filter((a) =>
+    split.apps.filter((a) =>
       a.name.toLowerCase().includes(appQuery.trim().toLowerCase()),
     ),
   );
 
-  const currentMode = $derived(tab === "apps" ? split.appsMode : split.sitesMode);
-
   const enabledCount = $derived(
-    tab === "apps"
-      ? split.currentApps.filter((a) => a.enabled).length
-      : split.currentSites.filter((s) => s.enabled).length,
+    split.apps.filter((a) => a.enabled).length + split.sites.filter((s) => s.enabled).length,
   );
 
+  /** Shared mode description — apps + sites are governed by the same mode now,
+   *  so we can show one short blurb that covers both. */
   const modeDescription = $derived(
-    t(`split.mode.${tab === "apps" ? "apps" : "sites"}${currentMode === "selective" ? "Selective" : "General"}`),
+    split.mode === "selective" ? t("split.mode.selective") : t("split.mode.general"),
   );
-
-  function setMode(m: Mode) {
-    if (tab === "apps") split.setAppsMode(m);
-    else split.setSitesMode(m);
-  }
 </script>
 
 {#snippet appIcon(icon: string | null | undefined)}
@@ -106,9 +99,9 @@
         <div class="muted small">{t("split.active", { n: enabledCount })}</div>
       </div>
       <Dropdown
-        value={currentMode}
+        value={split.mode}
         options={modeOptions}
-        onChange={(v) => setMode(v as Mode)}
+        onChange={(v) => split.setMode(v as Mode)}
         ariaLabel={t("split.mode")}
       />
     </div>
@@ -123,7 +116,7 @@
       </button>
     </div>
 
-    {#if split.currentApps.length === 0}
+    {#if split.apps.length === 0}
       <div class="empty-state">
         <div class="empty-title">{t("split.noAppsTitle")}</div>
         <div class="muted">{t("split.noAppsHint")}</div>
@@ -157,14 +150,14 @@
       <button class="btn btn-primary" type="submit" disabled={!siteDraft.trim()}>{t("import.add")}</button>
     </form>
 
-    {#if split.currentSites.length === 0}
+    {#if split.sites.length === 0}
       <div class="empty-state">
         <div class="empty-title">{t("split.noSitesTitle")}</div>
         <div class="muted">{t("split.noSitesHint")}</div>
       </div>
     {:else}
       <div class="list">
-        {#each split.currentSites as s (s.id)}
+        {#each split.sites as s (s.id)}
           <div class="list-row">
             <span class="pattern">{s.pattern}</span>
             <button class="btn-ghost trash" onclick={() => split.removeSite(s.id)} aria-label="Remove">

@@ -9,14 +9,17 @@ use serde_json::{json, Value};
 use crate::subscription::VlessServer;
 
 /// Split-tunnel selection passed from the UI (only enabled entries).
+///
+/// One `mode` applies to BOTH the apps and sites lists. selective = whitelist
+/// (only listed entries get the proxy outbound; default direct). general =
+/// blacklist (all traffic uses the proxy outbound; listed entries are
+/// exceptions that stay direct).
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SplitInput {
-    /// "selective" | "general"
+    /// "selective" | "general". Empty string is treated as "general" so an
+    /// uninitialised input doesn't accidentally cut the user's network.
     #[serde(default)]
-    pub apps_mode: String,
-    /// "selective" | "general"
-    #[serde(default)]
-    pub sites_mode: String,
+    pub mode: String,
     /// Process / binary names of enabled apps.
     #[serde(default)]
     pub apps: Vec<String>,
@@ -25,8 +28,8 @@ pub struct SplitInput {
     pub sites: Vec<String>,
 }
 
-fn is_general(mode: &str) -> bool {
-    mode == "general"
+fn is_selective(mode: &str) -> bool {
+    mode == "selective"
 }
 
 /// Build the proxy outbound for the selected server.
@@ -144,37 +147,42 @@ fn build_transport(s: &VlessServer) -> Option<Value> {
     }
 }
 
-/// Route rules derived from the split-tunnel selection. Each enabled app/site
-/// is sent to proxy (selective mode) or direct (general mode); the default
-/// (`final`) is proxy when any list is in general mode, else direct.
+/// Route rules derived from the split-tunnel selection.
+///
+/// The mode controls TWO things at once: where listed entries go, and where
+/// everything else goes (the route `final`):
+///   - selective: listed -> proxy, default direct (whitelist).
+///   - general:   listed -> direct, default proxy (blacklist).
+///
+/// Apps and sites both follow the same mode (the UI exposes one toggle), so
+/// "selective apps + general sites" can't accidentally degrade selective
+/// behaviour by silently flipping the default — the old per-list modes had
+/// that bug.
 fn build_route_rules(split: &SplitInput) -> (Vec<Value>, &'static str) {
     let mut rules = Vec::new();
 
-    let apps_outbound = if is_general(&split.apps_mode) { "direct" } else { "proxy" };
+    let selective = is_selective(&split.mode);
+    let listed_outbound = if selective { "proxy" } else { "direct" };
+    let default = if selective { "direct" } else { "proxy" };
+
     for app in &split.apps {
         if !app.is_empty() {
-            rules.push(json!({ "process_name": [app], "outbound": apps_outbound }));
+            rules.push(json!({ "process_name": [app], "outbound": listed_outbound }));
         }
     }
 
-    let sites_outbound = if is_general(&split.sites_mode) { "direct" } else { "proxy" };
     for site in &split.sites {
         let site = site.trim();
         if site.is_empty() {
             continue;
         }
         if let Some(suffix) = site.strip_prefix("*.") {
-            rules.push(json!({ "domain_suffix": [suffix], "outbound": sites_outbound }));
+            rules.push(json!({ "domain_suffix": [suffix], "outbound": listed_outbound }));
         } else {
-            rules.push(json!({ "domain": [site], "outbound": sites_outbound }));
+            rules.push(json!({ "domain": [site], "outbound": listed_outbound }));
         }
     }
 
-    let default = if is_general(&split.apps_mode) || is_general(&split.sites_mode) {
-        "proxy"
-    } else {
-        "direct"
-    };
     (rules, default)
 }
 
@@ -318,24 +326,34 @@ mod tests {
     fn selective_apps_route_to_proxy() {
         let s = parse_proxy_uri("vless://u@1.2.3.4:443?security=reality&pbk=K#X").unwrap();
         let sp = SplitInput {
-            apps_mode: "selective".into(),
+            mode: "selective".into(),
             apps: vec!["firefox".into()],
             ..Default::default()
         };
         let cfg = build_config(&s, &sp, "tun", true);
         assert_eq!(cfg["route"]["final"], "direct");
         let rules = cfg["route"]["rules"].as_array().unwrap();
-        // first rule is hijack-dns; the app rule follows
         let app_rule = rules.iter().find(|r| r.get("process_name").is_some()).unwrap();
         assert_eq!(app_rule["process_name"][0], "firefox");
         assert_eq!(app_rule["outbound"], "proxy");
     }
 
     #[test]
+    fn selective_with_empty_lists_routes_everything_direct() {
+        // Regression: previously "apps selective + sites general" (the default
+        // for sites_mode after toggling apps to selective) defaulted to proxy
+        // and silently made selective meaningless.
+        let s = parse_proxy_uri("vless://u@1.2.3.4:443?security=reality&pbk=K#X").unwrap();
+        let sp = SplitInput { mode: "selective".into(), ..Default::default() };
+        let cfg = build_config(&s, &sp, "tun", true);
+        assert_eq!(cfg["route"]["final"], "direct");
+    }
+
+    #[test]
     fn general_sites_route_to_direct() {
         let s = parse_proxy_uri("vless://u@1.2.3.4:443?security=reality&pbk=K#X").unwrap();
         let sp = SplitInput {
-            sites_mode: "general".into(),
+            mode: "general".into(),
             sites: vec!["*.ru".into()],
             ..Default::default()
         };

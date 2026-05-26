@@ -10,13 +10,12 @@ function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** Current split-tunnel selection (active mode's enabled entries). */
+/** Current split-tunnel selection (enabled entries for the active mode). */
 function splitInput(): SplitInput {
   return {
-    apps_mode: split.appsMode,
-    sites_mode: split.sitesMode,
-    apps: split.currentApps.filter((a) => a.enabled).map((a) => a.id),
-    sites: split.currentSites.filter((s) => s.enabled).map((s) => s.pattern),
+    mode: split.mode,
+    apps: split.apps.filter((a) => a.enabled).map((a) => a.id),
+    sites: split.sites.filter((s) => s.enabled).map((s) => s.pattern),
   };
 }
 

@@ -285,17 +285,30 @@
                       {t("core.active")}
                     </span>
                     <button
-                      class="ico-btn"
+                      class="btn btn-sm"
                       onclick={() => core.install(r.tag)}
                       disabled={isDownloading}
-                      aria-label={t("core.reinstall")}
                       title={t("core.reinstall")}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <svg class="btn-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M21 12a9 9 0 1 1-3.13-6.84M21 4v5h-5"
                           stroke="currentColor" stroke-width="1.9"
                           stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
+                      <span>{t("core.reinstall")}</span>
+                    </button>
+                    <button
+                      class="btn btn-sm btn-danger"
+                      onclick={() => core.uninstall(r.tag)}
+                      disabled={isSwitching}
+                      title={t("core.delete")}
+                    >
+                      <svg class="btn-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"
+                          stroke="currentColor" stroke-width="1.9"
+                          stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                      <span>{t("core.delete")}</span>
                     </button>
                   {:else if isInstalled}
                     <button
@@ -306,17 +319,17 @@
                       {isSwitching ? "…" : t("core.use")}
                     </button>
                     <button
-                      class="ico-btn"
+                      class="btn btn-sm btn-danger"
                       onclick={() => core.uninstall(r.tag)}
                       disabled={isSwitching}
-                      aria-label={t("core.delete")}
                       title={t("core.delete")}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <svg class="btn-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"
-                          stroke="currentColor" stroke-width="1.8"
+                          stroke="currentColor" stroke-width="1.9"
                           stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
+                      <span>{t("core.delete")}</span>
                     </button>
                   {:else}
                     <button
@@ -615,35 +628,25 @@
     flex-shrink: 0;
   }
 
-  /* Small "icon-only" square button — used for refresh / delete next to the
-     primary action so the row stays compact. */
-  .ico-btn {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    width: 30px;
-    height: 30px;
-    border-radius: 8px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: background var(--transition), color var(--transition),
-      border-color var(--transition);
-    flex-shrink: 0;
-  }
-  .ico-btn:hover:not(:disabled) {
-    background: var(--bg-elev);
-    color: var(--text);
-    border-color: var(--border-strong);
-  }
-  .ico-btn:disabled { opacity: 0.45; cursor: default; }
-
   /* Compact variant of the standard btn for the row actions. */
   :global(.btn.btn-sm) {
     font-size: 12px;
-    padding: 6px 12px;
+    padding: 6px 10px;
     height: 30px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  /* Destructive (delete) — outline red so it reads as "removes data" without
+     screaming for attention next to a primary action. */
+  :global(.btn.btn-danger) {
+    border-color: var(--danger-faint);
+    color: var(--danger);
+    background: transparent;
+  }
+  :global(.btn.btn-danger:hover:not(:disabled)) {
+    background: var(--danger-faint);
+    border-color: var(--danger);
   }
 
   /* Download progress: filled bar + bytes/speed line. */

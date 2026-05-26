@@ -45,6 +45,11 @@ install -Dm755 -o root -g root "$CORE_SRC"  "$PREFIX/sing-box"
 sed "s/__UID__/$INVOKING_UID/" "$SCRIPT_DIR/aegisvpn-helper.service" > "$UNIT"
 
 systemctl daemon-reload
-systemctl enable --now aegisvpn-helper.service
+systemctl enable aegisvpn-helper.service
+# `enable --now` only *starts* a stopped service; on a reinstall the existing
+# service must be explicitly restarted to pick up the new helper binary.
+# Without this, the running daemon is the old one — new requests (install_core,
+# ping_host) fail with "bad request" and the user sees no change.
+systemctl restart aegisvpn-helper.service
 
 echo "AegisVPN helper installed and running (allowed UID: $INVOKING_UID)."

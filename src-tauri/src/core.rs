@@ -485,19 +485,21 @@ pub async fn core_activate(app: AppHandle, tag: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Delete a cached version. Refuses to delete the active one — the user must
-/// activate another version first (and a no-active state would break connect).
+/// Delete a cached version. Deleting the active one is allowed: callers are
+/// expected to disconnect first (the frontend does), and we clear active.txt
+/// so the next connect attempt errors clearly with "no core installed".
 #[tauri::command]
 pub async fn core_uninstall(app: AppHandle, tag: String) -> Result<(), String> {
-    if active_tag(&app).as_deref() == Some(tag.as_str()) {
-        return Err("can't delete the active version — pick another first".into());
-    }
+    let was_active = active_tag(&app).as_deref() == Some(strip_v(&tag));
     let dir = versions_dir(&app)?.join(strip_v(&tag));
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| format!("remove version dir: {e}"))?;
     }
-    // If somehow we end up with nothing installed, clear the marker too so
-    // core_info() reports a clean "no core" state.
+    if was_active {
+        let _ = clear_active(&app);
+    }
+    // If somehow we end up with nothing installed at all, clear the marker
+    // defensively so core_info() reports a clean "no core" state.
     if installed_tags(&app).is_empty() {
         let _ = clear_active(&app);
     }

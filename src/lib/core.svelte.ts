@@ -5,10 +5,12 @@ import {
   coreInstall,
   coreUninstall,
   listCoreReleases,
+  vpnDisconnect,
   type CoreInfo,
   type CoreProgress,
   type CoreRelease,
 } from "$lib/api";
+import { conn } from "$lib/conn.svelte";
 
 function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -115,12 +117,17 @@ class CoreStore {
     }
   }
 
-  /** Delete a cached version from disk. Refuses to delete the active one. */
+  /** Delete a cached version from disk. If the user is deleting the version
+   *  they're currently using, we tear down the VPN first — leaving the tunnel
+   *  alive while its core binary disappears would be a hung connection. */
   async uninstall(tag: string): Promise<void> {
     const t = stripV(tag);
     this.switchingTag = t;
     this.error = null;
     try {
+      if (this.isActive(t) && conn.status !== "disconnected") {
+        await conn.disconnect();
+      }
       await coreUninstall(t);
       await this.check();
     } catch (e) {

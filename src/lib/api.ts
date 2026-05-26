@@ -157,8 +157,9 @@ export function vpnIcmpPing(host: string, timeoutMs = 2000): Promise<number> {
 
 /** Enabled split-tunnel selection passed to the connect command. */
 export interface SplitInput {
-  apps_mode: string;
-  sites_mode: string;
+  /** "selective" (whitelist: only listed apps+sites via VPN) or
+   *  "general"   (blacklist: all via VPN except listed apps+sites). */
+  mode: string;
   apps: string[];
   sites: string[];
 }
