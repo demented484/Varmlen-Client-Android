@@ -10,7 +10,7 @@
 //! plaintext. Whitespace-only lines and comment lines (`#…`) are ignored.
 
 use base64::Engine;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 use url::Url;
@@ -29,33 +29,61 @@ pub enum ParseError {
     MissingPort,
 }
 
+fn default_protocol() -> String {
+    "vless".to_string()
+}
+
+/// Deserialize `protocol`, tolerating a missing key, an explicit `null`, or an
+/// empty string from subscriptions persisted before multi-protocol support —
+/// all of which mean the legacy default, vless.
+fn de_protocol<'de, D>(d: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(d)?;
+    Ok(opt.filter(|s| !s.is_empty()).unwrap_or_else(default_protocol))
+}
+
 /// A single VPN endpoint parsed from a proxy URI. The struct keeps its
 /// historical name; `protocol` distinguishes vless / trojan / shadowsocks /
 /// vmess, and credential fields are filled per-protocol.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VlessServer {
     pub id: String,
-    /// Protocol: "vless" | "trojan" | "shadowsocks" | "vmess".
+    /// Protocol: "vless" | "trojan" | "shadowsocks" | "vmess". Tolerant of
+    /// missing/null/empty (legacy data) → defaults to "vless".
+    #[serde(default = "default_protocol", deserialize_with = "de_protocol")]
     pub protocol: String,
     /// VLESS/VMess UUID, or Trojan password. Empty for Shadowsocks.
     pub uuid: String,
     /// Shadowsocks/Trojan password (Shadowsocks keeps it separate from method).
+    #[serde(default)]
     pub password: Option<String>,
     /// Shadowsocks cipher method.
+    #[serde(default)]
     pub method: Option<String>,
     pub host: String,
     pub port: u16,
     pub label: String,
     pub transport: String,
     pub security: String,
+    #[serde(default)]
     pub sni: Option<String>,
+    #[serde(default)]
     pub fingerprint: Option<String>,
+    #[serde(default)]
     pub public_key: Option<String>,
+    #[serde(default)]
     pub short_id: Option<String>,
+    #[serde(default)]
     pub flow: Option<String>,
+    #[serde(default)]
     pub path: Option<String>,
+    #[serde(default)]
     pub mode: Option<String>,
+    #[serde(default)]
     pub packet_encoding: Option<String>,
+    #[serde(default)]
     pub raw_params: HashMap<String, String>,
 }
 

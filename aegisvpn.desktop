@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=AegisVPN
+GenericName=VPN Client
+Comment=AegisVPN — VLESS/Reality VPN client
+# The env flags work around a WebKitGTK rendering issue on this Wayland setup.
+# Adjust the path if the repo lives elsewhere.
+Exec=env GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 /home/daniil/VPN/Client/aegisvpn/src-tauri/target/release/aegisvpn
+Terminal=false
+Categories=Network;Security;
+StartupWMClass=AegisVPN

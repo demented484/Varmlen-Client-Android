@@ -1,20 +1,18 @@
 import { browser } from "$app/environment";
 
-export type LogLevel = "warn" | "info" | "debug";
+export type VpnMode = "tun" | "proxy";
 
 interface Persisted {
-  autostart: boolean;
+  vpnMode: VpnMode;
   killswitch: boolean;
   allowLan: boolean;
-  logLevel: LogLevel;
 }
 
 const KEY = "aegisvpn.settings";
 const DEFAULTS: Persisted = {
-  autostart: false,
+  vpnMode: "tun",
   killswitch: true,
   allowLan: true,
-  logLevel: "warn",
 };
 
 function load(): Persisted {
@@ -24,12 +22,9 @@ function load(): Persisted {
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<Persisted>;
     return {
-      autostart: !!parsed.autostart,
+      vpnMode: parsed.vpnMode === "proxy" ? "proxy" : "tun",
       killswitch: parsed.killswitch ?? DEFAULTS.killswitch,
       allowLan: parsed.allowLan ?? DEFAULTS.allowLan,
-      logLevel: ["warn", "info", "debug"].includes(parsed.logLevel as string)
-        ? (parsed.logLevel as LogLevel)
-        : DEFAULTS.logLevel,
     };
   } catch {
     return DEFAULTS;
@@ -39,28 +34,25 @@ function load(): Persisted {
 const _initialSettings = load();
 
 class SettingsStore {
-  autostart = $state(_initialSettings.autostart);
+  vpnMode = $state<VpnMode>(_initialSettings.vpnMode);
   killswitch = $state(_initialSettings.killswitch);
   allowLan = $state(_initialSettings.allowLan);
-  logLevel = $state<LogLevel>(_initialSettings.logLevel);
 
   private persist(): void {
     if (!browser) return;
     localStorage.setItem(
       KEY,
       JSON.stringify({
-        autostart: this.autostart,
+        vpnMode: this.vpnMode,
         killswitch: this.killswitch,
         allowLan: this.allowLan,
-        logLevel: this.logLevel,
       }),
     );
   }
 
-  setAutostart(v: boolean): void { this.autostart = v; this.persist(); }
+  setVpnMode(v: VpnMode): void { this.vpnMode = v; this.persist(); }
   setKillswitch(v: boolean): void { this.killswitch = v; this.persist(); }
   setAllowLan(v: boolean): void { this.allowLan = v; this.persist(); }
-  setLogLevel(v: LogLevel): void { this.logLevel = v; this.persist(); }
 }
 
 export const settings = new SettingsStore();

@@ -1,5 +1,9 @@
 mod apps;
+mod core;
+mod singbox;
+mod storage;
 mod subscription;
+mod vpn;
 
 use std::time::{Duration, Instant};
 
@@ -104,15 +108,33 @@ async fn ping_tcp(host: String, port: u16) -> Result<u32, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             parse_vless_uri,
             parse_subscription_body,
             fetch_subscription,
             ping_tcp,
             apps::list_installed_apps,
-            apps::app_from_file
+            apps::pick_file,
+            apps::app_from_file,
+            core::core_info,
+            core::core_install,
+            core::list_core_releases,
+            singbox::generate_singbox_config,
+            vpn::vpn_connect,
+            vpn::vpn_disconnect,
+            vpn::vpn_status,
+            vpn::helper_installed,
+            vpn::install_helper,
+            storage::read_legacy_storage
         ])
+        .on_window_event(|_window, event| {
+            // Closing the window tears the VPN down too — kill the local proxy
+            // (if any) and tell the helper to disconnect sing-box. Otherwise
+            // the tunnel keeps running after the app is gone.
+            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                let _ = vpn::vpn_disconnect();
+            }
+        })
         .setup(|_app| {
             // Devtools stay available on demand (right-click → Inspect, or the
             // shortcut) in debug builds; we just don't pop them open on launch.

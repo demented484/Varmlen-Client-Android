@@ -84,25 +84,68 @@ const LAUNCHERS: &[&str] = &[
     "env", "sh", "bash", "python", "python3", "java", "mono", "dotnet",
 ];
 
-/// A stable, unique identifier for an app. Normally the binary name, but for
-/// launcher-fronted entries (Steam games → all "steam", Flatpaks → all
-/// "flatpak") we use the Flatpak app-id or, failing that, the desktop file
-/// name, so every app stays distinct instead of de-duplicating into one.
+/// A stable, unique identifier for an app — ideally the real process name that
+/// sing-box matches. Normally the binary; for launcher-fronted entries (Steam
+/// → "steam", Flatpak → "flatpak") we resolve the actual process: Flatpak via
+/// its install metadata / launch wrapper, else fall back to a unique id.
 fn derive_app_id(exec: &str, desktop_stem: &str) -> String {
     let bin = binary_from_exec(exec).unwrap_or_else(|| desktop_stem.to_string());
     if !LAUNCHERS.contains(&bin.as_str()) {
         return bin;
     }
-    // Flatpak: the reverse-DNS app id (e.g. app.zen_browser.zen).
     if bin == "flatpak" {
         if let Some(appid) = exec.split_whitespace().find(|t| {
             !t.starts_with('-') && !t.starts_with('%') && t.matches('.').count() >= 2
         }) {
-            return appid.to_string();
+            // The real process (e.g. "zen") — what sing-box matches — not the
+            // reverse-DNS app id.
+            return flatpak_process_name(appid).unwrap_or_else(|| appid.to_string());
         }
     }
-    // Otherwise fall back to the (unique) desktop file name.
+    // Steam games etc. have no statically-knowable process name → unique stem
+    // (the user can refine via "Choose from file" → the game binary).
     desktop_stem.to_string()
+}
+
+fn flatpak_app_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![PathBuf::from("/var/lib/flatpak/app")];
+    if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(PathBuf::from(home).join(".local/share/flatpak/app"));
+    }
+    dirs
+}
+
+/// Resolve a Flatpak app-id to the real process name. Reads `command` from the
+/// install metadata; when that's a wrapper script, parses its `exec …` line for
+/// the actual binary (e.g. zen's `launch-script.sh` → `/app/zen/zen` → "zen").
+fn flatpak_process_name(app_id: &str) -> Option<String> {
+    let basename = |s: &str| Path::new(s).file_name().map(|n| n.to_string_lossy().to_string());
+    for base in flatpak_app_dirs() {
+        let active = base.join(app_id).join("current/active");
+        let Ok(meta) = fs::read_to_string(active.join("metadata")) else { continue };
+        let Some(command) = meta
+            .lines()
+            .find_map(|l| l.strip_prefix("command="))
+            .map(|c| c.trim().to_string())
+        else {
+            continue;
+        };
+        // A wrapper script (#!…) usually `exec`s the real binary.
+        if let Ok(script) = fs::read_to_string(active.join("files/bin").join(&command)) {
+            if script.starts_with("#!") {
+                if let Some(real) = script
+                    .lines()
+                    .find(|l| l.trim_start().starts_with("exec "))
+                    .and_then(|l| l.split_whitespace().skip(1).find(|t| t.starts_with('/')))
+                    .and_then(basename)
+                {
+                    return Some(real);
+                }
+            }
+        }
+        return basename(&command);
+    }
+    None
 }
 
 fn read_icon_data_uri(path: &Path) -> Option<String> {
@@ -250,9 +293,16 @@ fn parse_desktop_entry(path: &Path, icon_index: &HashMap<String, PathBuf>) -> Op
     if no_display || !is_app {
         return None;
     }
+    let exec = exec?;
+    // Skip Steam game shortcuts: they launch via `steam://rungameid/<id>`, so
+    // there's no derivable process name and the entry would never match. Such
+    // games are added via "Choose from file" → the game binary instead.
+    if exec.contains("steam://rungameid/") {
+        return None;
+    }
     let name = name?;
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-    let id = derive_app_id(&exec?, stem);
+    let id = derive_app_id(&exec, stem);
     let icon = icon.and_then(|i| resolve_icon(&i, icon_index));
     Some(InstalledApp { id, name, icon })
 }
@@ -303,6 +353,20 @@ pub fn app_from_file(path: String) -> Option<InstalledApp> {
 
     let base = p.file_name()?.to_string_lossy().to_string();
     Some(InstalledApp { id: base.clone(), name: base, icon: None })
+}
+
+/// Open the system file picker (via the XDG desktop portal → the DE's native
+/// file manager dialog, with search) and return the chosen path, or null.
+#[tauri::command]
+pub async fn pick_file() -> Option<String> {
+    let mut dialog = rfd::AsyncFileDialog::new().set_title("Select an application");
+    if let Some(home) = std::env::var_os("HOME") {
+        dialog = dialog.set_directory(home);
+    }
+    dialog
+        .pick_file()
+        .await
+        .map(|f| f.path().to_string_lossy().to_string())
 }
 
 /// Installed desktop apps, de-duplicated by binary name and sorted by name.

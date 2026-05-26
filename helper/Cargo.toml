@@ -1,0 +1,15 @@
+[package]
+name = "aegisvpn-helper"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "Privileged helper that runs sing-box (TUN) on behalf of the AegisVPN client"
+
+[[bin]]
+name = "aegisvpn-helper"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"

@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { split, type Mode } from "$lib/split.svelte";
-  import { listInstalledApps, appFromFile, type InstalledApp } from "$lib/api";
+  import { listInstalledApps, appFromFile, pickFile, type InstalledApp } from "$lib/api";
   import { t } from "$lib/i18n.svelte";
   import Dropdown from "$lib/components/Dropdown.svelte";
 
@@ -18,7 +17,7 @@
   let showAddApp = $state(false);
   let pickerQuery = $state("");
   let installed = $state<InstalledApp[]>([]);
-  let installedLoading = $state(false);
+  let pickerLoading = $state(false);
 
   const addedIds = $derived(new Set(split.currentApps.map((a) => a.id)));
   const pickerResults = $derived.by(() => {
@@ -32,15 +31,14 @@
   async function openAddApp() {
     showAddApp = true;
     pickerQuery = "";
-    if (installed.length === 0) {
-      installedLoading = true;
-      try {
-        installed = await listInstalledApps();
-      } catch {
-        installed = [];
-      } finally {
-        installedLoading = false;
-      }
+    if (installed.length > 0) return;
+    pickerLoading = true;
+    try {
+      installed = await listInstalledApps();
+    } catch {
+      installed = [];
+    } finally {
+      pickerLoading = false;
     }
   }
 
@@ -49,15 +47,8 @@
   }
 
   async function pickFromFile() {
-    const picked = await openDialog({
-      multiple: false,
-      directory: false,
-      filters: [
-        { name: "Apps", extensions: ["desktop"] },
-        { name: "All files", extensions: ["*"] },
-      ],
-    });
-    if (typeof picked !== "string") return;
+    const picked = await pickFile();
+    if (!picked) return;
     const app = await appFromFile(picked);
     if (app) {
       split.addApp({ id: app.id, name: app.name, icon: app.icon ?? "📦" });
@@ -205,7 +196,7 @@
       <input type="search" placeholder={t("split.searchInstalled")} bind:value={pickerQuery} />
 
       <div class="picker">
-        {#if installedLoading}
+        {#if pickerLoading}
           <div class="picker-msg muted">{t("split.loadingApps")}</div>
         {:else if pickerResults.length === 0}
           <div class="picker-msg muted">
@@ -259,6 +250,7 @@
     position: absolute;
     inset: 56px 0 0 0;
     overflow-y: auto;
+    scrollbar-gutter: stable;
     padding: 0 14px 24px;
     display: flex;
     flex-direction: column;

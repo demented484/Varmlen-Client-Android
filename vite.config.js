@@ -15,7 +15,10 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // Bind IPv4 explicitly: this host's `localhost` resolves to ::1, whose
+    // loopback is broken, so binding default localhost left Vite unreachable
+    // and tauri stuck on "Waiting for frontend dev server".
+    host: host || "127.0.0.1",
     hmr: host
       ? {
           protocol: "ws",

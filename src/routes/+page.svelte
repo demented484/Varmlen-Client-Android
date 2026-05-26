@@ -1,6 +1,6 @@
 <script lang="ts">
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { conn, fmtElapsed } from "$lib/conn.svelte";
+  import { conn } from "$lib/conn.svelte";
   import { subs } from "$lib/subs.svelte";
   import { t } from "$lib/i18n.svelte";
 
@@ -78,9 +78,6 @@
 
   const statusLabel = $derived(t(`status.${conn.status}`));
 
-  const allCollapsed = $derived(
-    subs.list.length > 0 && subs.list.every((s) => s.collapsed),
-  );
 
   async function importSubscription(): Promise<void> {
     if (!subUrl.trim()) return;
@@ -128,24 +125,12 @@
         />
         <line x1="32" y1="11" x2="32" y2="30" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
       </svg>
-      {#if conn.status === "connected"}
-        <span class="power-timer">{fmtElapsed(conn.elapsedSec)}</span>
-      {/if}
     </button>
     <div class="status-text" data-status={conn.status}>{statusLabel}</div>
+    {#if conn.error}
+      <div class="conn-error">{conn.error}</div>
+    {/if}
   </section>
-
-  <div class="actions-row">
-    <button class="text-link" disabled={conn.status !== "connected"}>
-      {t("home.checkConnection")}
-    </button>
-    <button
-      class="text-link"
-      onclick={() => (allCollapsed ? subs.expandAll() : subs.collapseAll())}
-    >
-      {allCollapsed ? t("home.showAll") : t("home.hideAll")}
-    </button>
-  </div>
 
   {#each subs.list as sub (sub.id)}
     <section class="sub-card">
@@ -168,11 +153,9 @@
 
         <div class="sub-info">
           <div class="sub-title">{sub.name}</div>
-          <div class="sub-meta muted">
-            {fmtImported(sub.importedAt)}{sub.updateIntervalHours
-              ? ` · ${t("home.autoUpdate", { h: sub.updateIntervalHours })}`
-              : ""}
-          </div>
+          {#if sub.updateIntervalHours}
+            <div class="sub-meta muted">{t("home.autoUpdate", { h: sub.updateIntervalHours })}</div>
+          {/if}
         </div>
 
         <button
@@ -467,6 +450,9 @@
     inset: 56px 0 0 0;
     overflow-y: auto;
     overflow-x: hidden;
+    /* Reserve the scrollbar gutter so panels keep the same distance from the
+       edge whether or not the page is scrolling. */
+    scrollbar-gutter: stable;
     padding: 0 14px 24px;
   }
 
@@ -504,24 +490,22 @@
   .power[data-status="connecting"] {
     color: var(--accent);
   }
+  /* A spinning ring makes "connecting" unmistakable (motion is visible
+     regardless of theme colour, and keeps the webview repainting). */
+  .power[data-status="connecting"]::after {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    border-radius: 50%;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
   .power[data-status="connected"] {
     background: var(--accent);
     border-color: var(--accent);
     color: var(--accent-on);
   }
-  .power-timer {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 30px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-    font-size: 19px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    line-height: 1;
-  }
-
   .status-text {
     font-size: 13px;
     font-weight: 600;
@@ -532,29 +516,15 @@
   }
   .status-text[data-status="connected"] { color: var(--accent); }
   .status-text[data-status="connecting"] { color: var(--accent); }
+  .conn-error {
+    margin-top: 6px;
+    max-width: 280px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--danger);
+    line-height: 1.4;
+  }
 
-  /* ---------- actions row ---------- */
-  .actions-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 4px 4px 10px;
-  }
-  .text-link {
-    background: transparent;
-    border: none;
-    padding: 4px 0;
-    color: var(--text-muted);
-    font-size: 13px;
-  }
-  .text-link:hover:not(:disabled) {
-    color: var(--text);
-  }
-  .text-link:disabled {
-    color: var(--text-dim);
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
 
   /* ---------- subscription card ---------- */
   .sub-card {

@@ -39,9 +39,12 @@ function emptySites(): ByMode<SiteEntry> {
 }
 
 function defaults(): Persisted {
+  // Default to "general": the VPN carries everything, and split entries are
+  // exceptions that stay direct. With no entries this means "all traffic via
+  // VPN", which is what a user expects right after connecting.
   return {
-    appsMode: "selective",
-    sitesMode: "selective",
+    appsMode: "general",
+    sitesMode: "general",
     apps: emptyApps(),
     sites: emptySites(),
   };

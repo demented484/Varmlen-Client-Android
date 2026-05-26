@@ -1,57 +1,117 @@
+import { vpnConnect, vpnDisconnect, vpnStatus, type SplitInput } from "$lib/api";
+import { subs } from "$lib/subs.svelte";
+import { split } from "$lib/split.svelte";
+import { settings } from "$lib/settings.svelte";
+import { t } from "$lib/i18n.svelte";
+
 export type Status = "disconnected" | "connecting" | "connected";
+
+function msg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** Current split-tunnel selection (active mode's enabled entries). */
+function splitInput(): SplitInput {
+  return {
+    apps_mode: split.appsMode,
+    sites_mode: split.sitesMode,
+    apps: split.currentApps.filter((a) => a.enabled).map((a) => a.id),
+    sites: split.currentSites.filter((s) => s.enabled).map((s) => s.pattern),
+  };
+}
 
 class ConnStore {
   status = $state<Status>("disconnected");
-  elapsedSec = $state(0);
-  /**
-   * True while outgoing traffic is currently flowing. Wired to a real
-   * sing-box statistics feed later; for now a simple simulator pulses it
-   * on/off when connected, so the UI can be developed against the same
-   * surface area.
-   */
-  outgoing = $state(false);
+  /** Last connect error, surfaced under the power button. */
+  error = $state<string | null>(null);
 
-  private timer: ReturnType<typeof setInterval> | null = null;
-  private trafficTimer: ReturnType<typeof setInterval> | null = null;
+  private reapplyTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Signature of the config last applied, to avoid redundant reconnects. */
+  private lastSig: string | null = null;
+
+  /** Signature of everything that affects the generated config. */
+  private configSig(): string {
+    return JSON.stringify({
+      server: subs.selectedServerId,
+      mode: settings.vpnMode,
+      killswitch: settings.killswitch,
+      allowLan: settings.allowLan,
+      split: splitInput(),
+    });
+  }
+
+  /** Called reactively when config (location / split / mode / settings)
+   *  changes: while connected, debounce-reconnect with the new config so the
+   *  change takes effect live. The killswitch (if on) holds across the gap. */
+  onConfigChanged(): void {
+    const sig = this.configSig();
+    if (this.lastSig === null) {
+      this.lastSig = sig; // baseline on first run, no reconnect
+      return;
+    }
+    if (sig === this.lastSig) return;
+    this.lastSig = sig;
+    if (this.status !== "connected" && this.status !== "connecting") return;
+    if (this.reapplyTimer) clearTimeout(this.reapplyTimer);
+    this.reapplyTimer = setTimeout(() => void this.connect(), 500);
+  }
 
   async toggle(): Promise<void> {
-    if (this.status === "disconnected") {
-      this.status = "connecting";
-      // TODO: invoke('start_singbox', { server_id })
-      await new Promise((r) => setTimeout(r, 700));
-      this.status = "connected";
-      this.elapsedSec = 0;
-      this.timer = setInterval(() => (this.elapsedSec += 1), 1000);
-      // Simulator: traffic is "on" most of the time when connected, blinks off
-      // for ~1s every ~3s, mirroring a browsing pattern. Replace with the real
-      // bps reading once the agent ships.
-      this.trafficTimer = setInterval(() => {
-        this.outgoing = Math.random() > 0.25;
-      }, 1500);
-      this.outgoing = true;
+    if (this.status === "connected" || this.status === "connecting") {
+      await this.disconnect();
     } else {
-      // TODO: invoke('stop_singbox')
+      await this.connect();
+    }
+  }
+
+  async connect(): Promise<void> {
+    this.error = null;
+    const server = subs.selectedServerRaw();
+    if (!server) {
+      this.error = t("conn.selectLocation");
+      return;
+    }
+    this.status = "connecting";
+    this.lastSig = this.configSig();
+    try {
+      const resp = await vpnConnect(
+        server,
+        splitInput(),
+        settings.vpnMode,
+        settings.killswitch,
+        settings.allowLan,
+      );
+      if (!resp.ok) throw new Error(resp.error || "connection failed");
+      this.status = "connected";
+    } catch (e) {
+      this.error = msg(e);
       this.status = "disconnected";
-      this.outgoing = false;
-      if (this.timer) {
-        clearInterval(this.timer);
-        this.timer = null;
+    }
+  }
+
+  async disconnect(): Promise<void> {
+    try {
+      await vpnDisconnect();
+    } catch {
+      // best effort — drop to disconnected regardless
+    }
+    this.status = "disconnected";
+  }
+
+  /** Reconcile UI with the helper's actual state (e.g. window recreated while
+   *  still connected, or core crashed). */
+  async refresh(): Promise<void> {
+    try {
+      const resp = await vpnStatus();
+      if (resp.state === "connected") {
+        this.status = "connected";
+      } else if (resp.state === "disconnected" && this.status === "connected") {
+        this.status = "disconnected";
       }
-      if (this.trafficTimer) {
-        clearInterval(this.trafficTimer);
-        this.trafficTimer = null;
-      }
-      this.elapsedSec = 0;
+    } catch {
+      // helper unreachable — leave UI as is
     }
   }
 }
 
 export const conn = new ConnStore();
-
-export function fmtElapsed(s: number): string {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${pad(h)}:${pad(m)}:${pad(sec)}`;
-}

@@ -174,6 +174,17 @@ class SubsStore {
     this.persist();
   }
 
+  /** Parsed server for the current selection, or null if nothing is selected. */
+  selectedServerRaw(): VlessServer | null {
+    const id = this.selectedServerId;
+    if (!id) return null;
+    for (const sub of this.list) {
+      const srv = sub.servers.find((s) => s.id === id);
+      if (srv) return srv.raw;
+    }
+    return null;
+  }
+
   toggleCollapse(subId: string): void {
     const s = this.list.find((x) => x.id === subId);
     if (s) {
