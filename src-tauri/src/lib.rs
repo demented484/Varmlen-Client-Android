@@ -1,5 +1,6 @@
 mod apps;
 mod core;
+mod ping;
 mod singbox;
 mod storage;
 mod subscription;
@@ -113,6 +114,7 @@ pub fn run() {
             parse_subscription_body,
             fetch_subscription,
             ping_tcp,
+            ping::ping_protocol,
             apps::list_installed_apps,
             apps::pick_file,
             apps::app_from_file,

@@ -52,9 +52,17 @@ export function fetchSubscription(url: string): Promise<ImportResult> {
   return invoke<ImportResult>("fetch_subscription", { url });
 }
 
-/** TCP RTT in ms. Throws on timeout / unreachable. */
+/** TCP RTT in ms. Throws on timeout / unreachable. Cheap L4-only probe — it
+ *  doesn't verify that the proxy protocol actually works. */
 export function pingTcp(host: string, port: number): Promise<number> {
   return invoke<number>("ping_tcp", { host, port });
+}
+
+/** Protocol-aware ping: spawns a one-shot sing-box with this server as the
+ *  outbound and times an HTTPS GET through it. Verifies the handshake
+ *  (Reality/TLS/UUID) actually works — wrong key = error, not a fake 0 ms. */
+export function pingProtocol(server: VlessServer, timeoutMs = 6000): Promise<number> {
+  return invoke<number>("ping_protocol", { server, timeoutMs });
 }
 
 export interface InstalledApp {
