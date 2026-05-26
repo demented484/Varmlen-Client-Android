@@ -74,8 +74,11 @@
     const info = core.info;
     if (!info) return core.error ? t("core.checkFailed") : t("core.checking");
     if (info.installed) {
-      const tail = info.has_update ? t("core.updateAvailable") : t("core.upToDate");
-      return `${info.installed} · ${tail}`;
+      // Up-to-date case: just show the version. Update available: show the
+      // arrow to the newer one so it's obvious *what* the update is.
+      return info.has_update && info.latest
+        ? `${info.installed} → ${info.latest}`
+        : info.installed;
     }
     return info.latest
       ? `${t("core.notInstalled")} · ${t("core.latest", { v: info.latest })}`
@@ -187,7 +190,7 @@
           <div class="row-sub muted">{coreStatus}</div>
         </div>
         <button
-          class="btn btn-ghost"
+          class="btn"
           onclick={openVersions}
           disabled={core.busy}
           title={t("core.versionsTitle")}
@@ -226,21 +229,37 @@
             {#each core.releases as r (r.tag)}
               {@const ver = r.tag.replace(/^v/, "")}
               {@const isInstalled = core.info?.installed === ver}
-              <li>
-                <button
-                  type="button"
-                  class="ver-row"
-                  class:current={isInstalled}
-                  onclick={() => installSpecific(r.tag)}
-                  disabled={core.busy || isInstalled}
-                >
+              <li class="ver-row" class:current={isInstalled}>
+                <div class="ver-info">
                   <span class="ver-tag">{r.tag}</span>
                   <span class="ver-meta muted">
                     {formatReleaseDate(r.date)}
                     {#if r.prerelease}<span class="badge">{t("core.preview")}</span>{/if}
-                    {#if isInstalled}<span class="badge badge-on">{t("core.currentlyInstalled")}</span>{/if}
                   </span>
-                </button>
+                </div>
+                {#if isInstalled}
+                  <span class="ver-current" aria-label={t("core.currentlyInstalled")}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M5 12l4 4 10-10" stroke="currentColor" stroke-width="2.4"
+                        stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </span>
+                {:else}
+                  <button
+                    type="button"
+                    class="dl-btn"
+                    onclick={() => installSpecific(r.tag)}
+                    disabled={core.busy}
+                    aria-label="{t('core.install')} {r.tag}"
+                    title="{t('core.install')} {r.tag}"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M12 4v12m0 0l-4-4m4 4l4-4M5 20h14"
+                        stroke="currentColor" stroke-width="1.9"
+                        stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -303,7 +322,8 @@
     position: absolute;
     inset: 56px 0 0 0;
     overflow-y: auto;
-    scrollbar-gutter: stable;
+    /* Symmetric gutter — see +page.svelte for the rationale. */
+    scrollbar-gutter: stable both-edges;
     padding: 0 14px 24px;
     display: flex;
     flex-direction: column;
@@ -453,21 +473,24 @@
   }
   .ver-list li + li { border-top: 1px solid var(--border); }
   .ver-row {
-    width: 100%;
-    background: transparent;
-    border: 0;
     color: var(--text);
-    text-align: left;
     padding: 10px 12px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    cursor: pointer;
   }
-  .ver-row:hover:not(:disabled) { background: var(--bg-elev); }
-  .ver-row:disabled { cursor: default; opacity: 0.7; }
-  .ver-row.current { color: var(--text-muted); }
+  .ver-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .ver-row.current {
+    background: var(--accent-faint);
+    color: var(--accent);
+  }
+  .ver-row.current .ver-tag { color: var(--accent); }
   .ver-tag { font-weight: 600; font-size: 13px; }
   .ver-meta { font-size: 12px; display: flex; align-items: center; gap: 6px; }
   .badge {
@@ -480,9 +503,34 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  .badge-on {
-    background: rgba(46, 184, 114, 0.18);
-    border-color: rgba(46, 184, 114, 0.35);
-    color: #2eb872;
+  .dl-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition),
+      border-color var(--transition);
+    flex-shrink: 0;
+  }
+  .dl-btn:hover:not(:disabled) {
+    background: var(--bg-elev);
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  .dl-btn:disabled { opacity: 0.45; cursor: default; }
+  .ver-current {
+    color: var(--accent);
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
   }
 </style>

@@ -450,9 +450,11 @@
     inset: 56px 0 0 0;
     overflow-y: auto;
     overflow-x: hidden;
-    /* Reserve the scrollbar gutter so panels keep the same distance from the
-       edge whether or not the page is scrolling. */
-    scrollbar-gutter: stable;
+    /* Reserve a gutter on BOTH sides so the visible gap from app-edge to
+       panel-edge is identical on the left and on the right, regardless of
+       whether the scrollbar is currently showing. With plain `stable`
+       only the right side gets the gutter, and panels look pushed left. */
+    scrollbar-gutter: stable both-edges;
     padding: 0 14px 24px;
   }
 
@@ -462,7 +464,9 @@
     flex-direction: column;
     align-items: center;
     gap: 8px;
-    padding: 38px 0 14px;
+    /* Extra bottom padding pushes the subscriptions list down so it doesn't
+       feel glued to the CONNECTED status text. */
+    padding: 38px 0 32px;
     position: relative;
   }
   .power {

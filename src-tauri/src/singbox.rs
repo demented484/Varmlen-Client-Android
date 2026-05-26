@@ -29,12 +29,6 @@ fn is_general(mode: &str) -> bool {
     mode == "general"
 }
 
-/// Public re-export of [`build_outbound`] for the protocol-aware pinger,
-/// which builds its own minimal config around just the outbound block.
-pub fn build_outbound_public(s: &VlessServer) -> Value {
-    build_outbound(s)
-}
-
 /// Build the proxy outbound for the selected server.
 fn build_outbound(s: &VlessServer) -> Value {
     let mut o = json!({

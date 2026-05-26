@@ -1,7 +1,6 @@
 import { browser } from "$app/environment";
 import {
   fetchSubscription,
-  pingProtocol,
   pingTcp,
   flagFor,
   stripLeadingFlag,
@@ -325,13 +324,11 @@ class SubsStore {
 
   /** Re-ping every server in a subscription. Updates `pingMs` in place.
    *
-   *  Uses the protocol-aware probe (spawns sing-box, GETs through the proxy)
-   *  so a failing handshake shows up as null instead of a fake low number.
-   *  Falls back to a plain TCP probe when the core isn't installed yet.
-   *
-   *  Concurrency is capped — each probe spins up its own sing-box process,
-   *  so blasting all servers at once would stampede CPU and the local port
-   *  range. Three at a time keeps it brisk without hammering. */
+   *  Plain TCP-connect RTT — measures the real wire latency to host:port,
+   *  same number ICMP `ping` would show. Cheap, accurate, runs all servers
+   *  in parallel. (It deliberately doesn't open a TLS / Reality handshake;
+   *  that would inflate the number to multiples of the real latency, which
+   *  is the trap clients like Happ fall into.) */
   async pingAll(subId: string): Promise<void> {
     const sub = this.list.find((s) => s.id === subId);
     if (!sub) return;
@@ -342,49 +339,26 @@ class SubsStore {
         : s,
     );
 
-    // Probe one server first to detect a missing core; on that specific error
-    // we don't keep launching N processes that will all fail the same way.
-    let coreMissing = false;
-    const probe = async (sv: (typeof sub.servers)[number]): Promise<number | null> => {
-      if (coreMissing) {
-        try { return await pingTcp(sv.raw.host, sv.raw.port); } catch { return null; }
-      }
-      try {
-        return await pingProtocol(sv.raw);
-      } catch (e) {
-        const m = e instanceof Error ? e.message : String(e);
-        if (/core is not installed/i.test(m)) {
-          coreMissing = true;
-          try { return await pingTcp(sv.raw.host, sv.raw.port); } catch { return null; }
+    await Promise.all(
+      sub.servers.map(async (sv) => {
+        let pingMs: number | null = null;
+        try {
+          pingMs = await pingTcp(sv.raw.host, sv.raw.port);
+        } catch {
+          pingMs = null;
         }
-        return null;
-      }
-    };
-
-    const writeBack = (svId: string, pingMs: number | null) => {
-      this.list = this.list.map((s) =>
-        s.id === subId
-          ? {
-              ...s,
-              servers: s.servers.map((x) =>
-                x.id === svId ? { ...x, pingMs, pinging: false } : x,
-              ),
-            }
-          : s,
-      );
-    };
-
-    const queue = [...sub.servers];
-    const CONCURRENCY = 3;
-    const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const sv = queue.shift();
-        if (!sv) break;
-        const ms = await probe(sv);
-        writeBack(sv.id, ms);
-      }
-    });
-    await Promise.all(workers);
+        this.list = this.list.map((s) =>
+          s.id === subId
+            ? {
+                ...s,
+                servers: s.servers.map((x) =>
+                  x.id === sv.id ? { ...x, pingMs, pinging: false } : x,
+                ),
+              }
+            : s,
+        );
+      }),
+    );
     this.persist();
   }
 }
