@@ -5,9 +5,15 @@ import {
   stripLeadingFlag,
   formatBytes,
   formatExpires,
+  tcpPingHost,
   type ImportResult,
   type VlessServer,
 } from "$lib/api";
+
+/** Ping result for a server entry. `null` = unknown / not yet measured,
+ *  `"pinging"` = probe in flight, `"timeout"` = host unreachable / timed out,
+ *  number = RTT in milliseconds. */
+export type PingState = number | "pinging" | "timeout";
 
 export interface ServerEntry {
   id: string;
@@ -256,6 +262,9 @@ class SubsStore {
         this.selectedServerId = servers[0].id;
       }
       this.persist();
+      // Kick a ping pass for the new servers so the UI doesn't sit on "–"
+      // until the user opens it. Intentionally not awaited.
+      void Promise.all(servers.map((srv) => this.pingServer(srv)));
     } finally {
       this.importing = false;
     }
@@ -280,13 +289,14 @@ class SubsStore {
       const totalBytes = result.meta.total_bytes ?? sub.totalBytes;
       const usedBytes =
         (result.meta.upload_bytes ?? 0) + (result.meta.download_bytes ?? 0);
+      const freshServers = result.servers.map(toServerEntry);
       this.list = this.list.map((s) =>
         s.id === subId
           ? {
               ...s,
               name: result.meta.title ?? s.name,
               description: result.description ?? s.description,
-              servers: result.servers.map(toServerEntry),
+              servers: freshServers,
               updateIntervalHours:
                 result.meta.update_interval_hours ?? s.updateIntervalHours,
               usedBytes,
@@ -300,6 +310,9 @@ class SubsStore {
           : s,
       );
       this.persist();
+      // The old server IDs were just dropped (new ones are random), so the
+      // old `pings` entries are dead weight — refresh them.
+      void Promise.all(freshServers.map((srv) => this.pingServer(srv)));
     } catch (e) {
       console.error("refresh failed:", e);
       this.list = this.list.map((s) =>
@@ -317,8 +330,28 @@ class SubsStore {
     this.persist();
   }
 
-  // (Ping/latency display is intentionally out of the UI for now; we'll
-  // bring it back once the user decides on the measurement approach.)
+  // Ephemeral per-server ping state. Not persisted — we re-measure on app
+  // start and on subscription refresh, mirroring what Happ does on open.
+  pings = $state<Record<string, PingState>>({});
+
+  /** Probe one server. Updates `pings[id]` in place; never throws. */
+  async pingServer(srv: ServerEntry): Promise<void> {
+    this.pings = { ...this.pings, [srv.id]: "pinging" };
+    try {
+      const rtt = await tcpPingHost(srv.raw.host, srv.raw.port, 2500);
+      this.pings = { ...this.pings, [srv.id]: rtt };
+    } catch {
+      this.pings = { ...this.pings, [srv.id]: "timeout" };
+    }
+  }
+
+  /** Probe every server across every subscription in parallel. Safe to call
+   *  while one is already in flight; the in-flight ones just get overwritten
+   *  with fresh values. */
+  async pingAll(): Promise<void> {
+    const all: ServerEntry[] = this.list.flatMap((s) => s.servers);
+    await Promise.all(all.map((srv) => this.pingServer(srv)));
+  }
 }
 
 export const subs = new SubsStore();

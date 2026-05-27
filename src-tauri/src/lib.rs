@@ -109,6 +109,7 @@ pub fn run() {
             vpn::vpn_status,
             vpn::helper_installed,
             vpn::install_helper,
+            vpn::tcp_ping_host,
             storage::read_legacy_storage
         ])
         .on_window_event(|window, event| {

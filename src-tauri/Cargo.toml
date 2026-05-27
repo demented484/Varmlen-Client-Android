@@ -37,4 +37,9 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # File picker via the XDG desktop portal — shows the user's own DE file manager
 # dialog (with proper search). Cross-desktop, not GNOME-specific.
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
+# Used by the location-ping feature to source-bind TCP probes to the user's
+# physical interface, so latencies reflect the real network even when the VPN
+# tunnel is up (otherwise pings would route through the active server).
+socket2 = "0.5"
+libc = "0.2"
 

@@ -1,8 +1,18 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { conn } from "$lib/conn.svelte";
   import { subs } from "$lib/subs.svelte";
   import { t } from "$lib/i18n.svelte";
+
+  // Refresh latencies on app open and every 5 min while the home view is
+  // mounted, so the displayed numbers stay current without the user pulling
+  // to refresh. The ping store handles "in flight" overlap gracefully.
+  onMount(() => {
+    void subs.pingAll();
+    const id = setInterval(() => void subs.pingAll(), 5 * 60 * 1000);
+    return () => clearInterval(id);
+  });
 
   import type { Subscription, ServerEntry } from "$lib/subs.svelte";
 
@@ -233,6 +243,7 @@
       {#if !sub.collapsed}
         <ul class="server-list">
           {#each sub.servers as srv (srv.id)}
+            {@const ping = subs.pings[srv.id]}
             <li
               class="srv-row"
               class:active={subs.selectedServerId === srv.id}
@@ -245,6 +256,20 @@
                   <div class="srv-tr dim">{srv.transport}</div>
                 </div>
               </button>
+              <span
+                class="srv-ping"
+                class:ping-good={typeof ping === "number" && ping < 150}
+                class:ping-mid={typeof ping === "number" && ping >= 150 && ping < 400}
+                class:ping-slow={typeof ping === "number" && ping >= 400}
+                class:ping-bad={ping === "timeout"}
+                class:ping-busy={ping === "pinging"}
+                aria-label="latency"
+              >
+                {#if ping === "pinging"}…
+                {:else if ping === "timeout"}н/д
+                {:else if typeof ping === "number"}{ping}мс
+                {:else}–{/if}
+              </span>
               <button
                 class="srv-detail"
                 aria-label="Location details"
@@ -806,6 +831,22 @@
     color: inherit;
     flex-shrink: 0;
   }
+  /* Latency chip sits between the server name+transport block and the
+     details chevron — Happ-style. Color tiers communicate quality at a
+     glance without needing a legend. */
+  .srv-ping {
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    min-width: 44px;
+    text-align: right;
+    padding-right: 4px;
+    color: var(--muted, #888);
+  }
+  .ping-good { color: #4ade80; }
+  .ping-mid  { color: #fbbf24; }
+  .ping-slow { color: #fb923c; }
+  .ping-bad  { color: #ef4444; }
+  .ping-busy { color: var(--muted, #888); opacity: 0.6; }
 
   .empty {
     text-align: center;

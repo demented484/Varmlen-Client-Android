@@ -241,6 +241,82 @@ pub fn helper_install_core(path: std::path::PathBuf) -> Result<(), String> {
     }
 }
 
+/// First non-loopback non-tunnel IPv4 the kernel advertises. Used as the
+/// source IP for ping probes so that a TUN-mode VPN tunnel doesn't swallow
+/// them (without source-binding, every probe would just measure the active
+/// server's RTT). Returns None when no physical interface has an address.
+fn physical_ipv4() -> Option<std::net::Ipv4Addr> {
+    unsafe {
+        let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
+        if libc::getifaddrs(&mut ifap) != 0 {
+            return None;
+        }
+        let mut found = None;
+        let mut cur = ifap;
+        while !cur.is_null() {
+            let ifa = &*cur;
+            if !ifa.ifa_name.is_null() && !ifa.ifa_addr.is_null() {
+                let name = std::ffi::CStr::from_ptr(ifa.ifa_name).to_string_lossy();
+                let virt = name.starts_with("lo")
+                    || name.starts_with("tun")
+                    || name.starts_with("tap")
+                    || name.starts_with("wg")
+                    || name.starts_with("docker")
+                    || name.starts_with("br-")
+                    || name.starts_with("veth")
+                    || name.starts_with("vmnet");
+                let sa = &*ifa.ifa_addr;
+                if !virt && sa.sa_family as i32 == libc::AF_INET {
+                    let sin = &*(ifa.ifa_addr as *const libc::sockaddr_in);
+                    let ip = std::net::Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr));
+                    if !ip.is_loopback() && !ip.is_link_local() && !ip.is_unspecified() {
+                        found = Some(ip);
+                        break;
+                    }
+                }
+            }
+            cur = ifa.ifa_next;
+        }
+        libc::freeifaddrs(ifap);
+        found
+    }
+}
+
+/// TCP-connect RTT to host:port in ms. No root needed — measures the TCP
+/// 3-way handshake the same way Happ does for its location pings. The probe
+/// is source-bound to the physical interface so the result reflects the
+/// user's real network path, not the active VPN tunnel.
+#[tauri::command]
+pub async fn tcp_ping_host(host: String, port: u16, timeout_ms: Option<u32>) -> Result<u32, String> {
+    let timeout = Duration::from_millis(timeout_ms.unwrap_or(2500) as u64);
+    tokio::task::spawn_blocking(move || {
+        use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+        use std::net::{SocketAddr, ToSocketAddrs};
+
+        let dst: SocketAddr = (host.as_str(), port)
+            .to_socket_addrs()
+            .map_err(|e| format!("resolve: {e}"))?
+            .find(|a| a.is_ipv4())
+            .ok_or_else(|| "no ipv4 addr".to_string())?;
+
+        let sock = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+            .map_err(|e| format!("socket: {e}"))?;
+        // Best-effort source-bind; absent a physical iface (eg. user on TUN-only
+        // setup) we let the kernel pick — the ping will go via the tunnel but
+        // the call still succeeds.
+        if let Some(ip) = physical_ipv4() {
+            let _ = sock.bind(&SockAddr::from(SocketAddr::from((ip, 0))));
+        }
+
+        let started = std::time::Instant::now();
+        sock.connect_timeout(&SockAddr::from(dst), timeout)
+            .map_err(|e| format!("connect: {e}"))?;
+        Ok(started.elapsed().as_millis().min(u32::MAX as u128) as u32)
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
 /// ICMP RTT to host via the privileged helper (raw ICMP needs root). Returns
 /// the time in ms, or an error string when unreachable / helper is absent.
 ///

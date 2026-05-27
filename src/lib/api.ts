@@ -190,6 +190,13 @@ export function installHelper(): Promise<void> {
   return invoke<void>("install_helper");
 }
 
+/** TCP-connect RTT to host:port in ms. Source-bound to the user's physical
+ *  interface so the result reflects the real network even when the VPN tunnel
+ *  is active. Rejects on DNS/timeout/refused. */
+export function tcpPingHost(host: string, port: number, timeoutMs = 2500): Promise<number> {
+  return invoke<number>("tcp_ping_host", { host, port, timeoutMs });
+}
+
 /** One-time migration: read any prior dev-origin localStorage (subs, split,
  *  settings, …) so they aren't lost when the release build switches origin.
  *  Throws on error — frontend logs to console if migration can't run. */
