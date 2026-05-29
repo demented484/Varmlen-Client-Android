@@ -57,6 +57,18 @@ enum Request {
         #[serde(default = "default_ping_timeout")]
         timeout_ms: u32,
     },
+    /// TCP-connect RTT to `host:port`, source-bound via SO_BINDTODEVICE to the
+    /// user's physical interface so the probe bypasses sing-box's
+    /// auto_route/auto_redirect nftables fast-path even while the tunnel is up.
+    /// Plain SO_BIND to a phys-iface address isn't enough — auto_redirect
+    /// catches at the nftables layer regardless of source IP. SO_BINDTODEVICE
+    /// requires CAP_NET_RAW, which is why this lives in the helper.
+    TcpPingHost {
+        host: String,
+        port: u16,
+        #[serde(default = "default_ping_timeout")]
+        timeout_ms: u32,
+    },
 }
 
 fn default_ping_timeout() -> u32 { 2000 }
@@ -514,6 +526,97 @@ fn icmp_ping(host: &str, timeout_ms: u32) -> Result<u32, String> {
     Err("no RTT in ping output".into())
 }
 
+/// First non-virtual interface with an IPv4 address. We bind probes to this
+/// one via SO_BINDTODEVICE so they bypass sing-box's auto_route/auto_redirect
+/// (which catches by destination, not source — plain SO_BIND to a phys-iface
+/// IP isn't enough).
+fn pick_physical_iface() -> Option<String> {
+    unsafe {
+        let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
+        if libc::getifaddrs(&mut ifap) != 0 {
+            return None;
+        }
+        let mut found = None;
+        let mut cur = ifap;
+        while !cur.is_null() {
+            let ifa = &*cur;
+            if !ifa.ifa_name.is_null() && !ifa.ifa_addr.is_null() {
+                let name = std::ffi::CStr::from_ptr(ifa.ifa_name).to_string_lossy().into_owned();
+                let virt = name.starts_with("lo")
+                    || name.starts_with("tun")
+                    || name.starts_with("tap")
+                    || name.starts_with("wg")
+                    || name.starts_with("docker")
+                    || name.starts_with("br-")
+                    || name.starts_with("veth")
+                    || name.starts_with("vmnet")
+                    || name.starts_with("aegis");
+                let sa = &*ifa.ifa_addr;
+                if !virt && sa.sa_family as i32 == libc::AF_INET {
+                    let sin = &*(ifa.ifa_addr as *const libc::sockaddr_in);
+                    let ip = std::net::Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr));
+                    if !ip.is_loopback() && !ip.is_link_local() && !ip.is_unspecified() {
+                        found = Some(name);
+                        break;
+                    }
+                }
+            }
+            cur = ifa.ifa_next;
+        }
+        libc::freeifaddrs(ifap);
+        found
+    }
+}
+
+/// TCP-connect RTT in ms, source-bound to a physical interface so the probe
+/// doesn't get swallowed by the active VPN tunnel.
+fn tcp_ping_bypass(host: &str, port: u16, timeout_ms: u32) -> Result<u32, String> {
+    use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+    use std::net::{SocketAddr, ToSocketAddrs};
+    use std::time::{Duration, Instant};
+
+    if host.trim().is_empty() {
+        return Err("empty host".into());
+    }
+    if !host
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | ':' | '-' | '_'))
+    {
+        return Err("invalid host".into());
+    }
+
+    let dst: SocketAddr = (host, port)
+        .to_socket_addrs()
+        .map_err(|e| format!("resolve: {e}"))?
+        .find(|a| a.is_ipv4())
+        .ok_or_else(|| "no ipv4".to_string())?;
+
+    let sock = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+        .map_err(|e| format!("socket: {e}"))?;
+
+    // SO_MARK with sing-box's "tun bypass" mark (0x2024). The auto_redirect
+    // nftables ruleset has a "meta mark 0x2024 return" exemption at the top of
+    // both `output` and `output_udp_icmp` chains — packets with this mark
+    // skip the TPROXY redirect and the killswitch's drop. Without this the
+    // probe gets TPROXY'd into sing-box and the RTT reflects the tunnel.
+    // Requires CAP_NET_ADMIN — which is why this lives in the helper.
+    const SING_BOX_BYPASS_MARK: u32 = 0x2024;
+    let _ = sock.set_mark(SING_BOX_BYPASS_MARK);
+
+    // Belt-and-braces: also bind to the physical interface. Together with the
+    // mark this guarantees the packet leaves the wire even if sing-box's mark
+    // ever changes — the bind alone wouldn't be enough but it's cheap.
+    if let Some(iface) = pick_physical_iface() {
+        let _ = sock.bind_device(Some(iface.as_bytes()));
+    }
+
+    let timeout = Duration::from_millis(timeout_ms as u64);
+    let started = Instant::now();
+    sock.connect_timeout(&SockAddr::from(dst), timeout)
+        .map_err(|e| format!("connect: {e}"))?;
+    Ok(started.elapsed().as_millis().min(u32::MAX as u128) as u32)
+}
+
 fn peer_uid(stream: &UnixStream) -> Option<u32> {
     let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
     let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
@@ -545,6 +648,27 @@ fn handle(stream: UnixStream, daemon: Arc<Mutex<Daemon>>) {
             continue;
         }
         let resp = match serde_json::from_str::<Request>(&line) {
+            // Ping commands DON'T touch daemon state, so they must NOT take the
+            // daemon lock — a TcpPingHost blocks for up to its timeout doing a
+            // TCP connect, and holding the mutex across that serialized every
+            // concurrent ping (locations pinged one-by-one instead of in
+            // parallel). Handle them lock-free so the per-connection threads
+            // actually run concurrently.
+            Ok(Request::TcpPingHost { host, port, timeout_ms }) => {
+                match tcp_ping_bypass(&host, port, timeout_ms) {
+                    Ok(ms) => Response::rtt(ms),
+                    Err(e) => Response::err("unreachable", e),
+                }
+            }
+            Ok(Request::PingHost { host, timeout_ms }) => match icmp_ping(&host, timeout_ms) {
+                Ok(ms) => Response::rtt(ms),
+                Err(e) => Response::err("unreachable", e),
+            },
+            Ok(Request::InstallCore { path }) => match install_core(&path) {
+                Ok(()) => Response::ok("installed", None),
+                Err(e) => Response::err("unknown", e),
+            },
+            // State-touching commands: take the lock for the minimum needed.
             Ok(req) => {
                 let mut d = daemon.lock().unwrap();
                 match req {
@@ -560,14 +684,8 @@ fn handle(stream: UnixStream, daemon: Arc<Mutex<Daemon>>) {
                             Err(e) => Response::err(d.state(), e),
                         }
                     }
-                    Request::InstallCore { path } => match install_core(&path) {
-                        Ok(()) => Response::ok("installed", None),
-                        Err(e) => Response::err("unknown", e),
-                    },
-                    Request::PingHost { host, timeout_ms } => match icmp_ping(&host, timeout_ms) {
-                        Ok(ms) => Response::rtt(ms),
-                        Err(e) => Response::err("unreachable", e),
-                    },
+                    // ping / install handled lock-free above; unreachable here.
+                    _ => Response::err("unknown", "unhandled request".into()),
                 }
             }
             Err(e) => Response::err("unknown", format!("bad request: {e}")),
