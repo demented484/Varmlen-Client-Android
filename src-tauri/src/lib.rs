@@ -8,7 +8,7 @@ mod vpn;
 use std::time::Duration;
 
 use subscription::{
-    decode_maybe_b64, extract_description, is_supported_uri, parse_headers, parse_proxy_uri,
+    decode_maybe_b64, is_supported_uri, parse_body_meta, parse_headers, parse_proxy_uri,
     parse_subscription, ImportResult, VlessServer,
 };
 
@@ -60,23 +60,30 @@ async fn fetch_subscription(url: String) -> Result<ImportResult, String> {
     }
 
     let headers = resp.headers().clone();
+    let body = resp.text().await.map_err(|e| format!("read body: {e}"))?;
+    let servers = parse_subscription(&body);
+
+    // Some panels (Marzban / Happ-style) inline the metadata as `#key: value`
+    // lines at the top of the body instead of (or in addition to) HTTP headers.
+    // Merge both: an HTTP header wins, the inline value is the fallback.
+    let (inline, body_desc) = parse_body_meta(&body);
     let meta = parse_headers(|name| {
         headers
             .get(name)
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string())
+            .or_else(|| inline.get(name).cloned())
     });
 
-    let body = resp.text().await.map_err(|e| format!("read body: {e}"))?;
-    let servers = parse_subscription(&body);
-    // Prefer an in-body `# …` comment; otherwise fall back to the panel's
-    // `announce` header (often base64-encoded), used by Marzban/Remnawave-style
-    // panels to carry a broadcast message.
-    let description = extract_description(&body).or_else(|| {
+    // Description priority: a real free-text `# …` note, then the `announce`
+    // banner (base64), from either the header or the inline block.
+    let description = body_desc.or_else(|| {
         headers
             .get("announce")
             .and_then(|v| v.to_str().ok())
-            .map(decode_maybe_b64)
+            .map(|s| s.to_string())
+            .or_else(|| inline.get("announce").cloned())
+            .map(|s| decode_maybe_b64(&s))
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
     });

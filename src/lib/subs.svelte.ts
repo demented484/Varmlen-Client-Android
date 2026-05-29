@@ -220,8 +220,10 @@ class SubsStore {
 
   trafficText(sub: Subscription): string {
     const used = formatBytes(sub.usedBytes);
-    const total = sub.totalBytes > 0 ? formatBytes(sub.totalBytes) : "∞";
-    return `${used}/${total}`;
+    // No quota (total=0 = unlimited) → show just the bare used figure, not
+    // "X/∞" — the infinity denominator is noise when there's no cap.
+    if (sub.totalBytes > 0) return `${used}/${formatBytes(sub.totalBytes)}`;
+    return used;
   }
 
   expiresText(sub: Subscription): string | null {
@@ -351,6 +353,21 @@ class SubsStore {
   async pingAll(): Promise<void> {
     const all: ServerEntry[] = this.list.flatMap((s) => s.servers);
     await Promise.all(all.map((srv) => this.pingServer(srv)));
+  }
+
+  /** Probe every server inside a single subscription in parallel. Used by the
+   *  per-subscription ping button. */
+  async pingSub(subId: string): Promise<void> {
+    const sub = this.list.find((s) => s.id === subId);
+    if (!sub) return;
+    await Promise.all(sub.servers.map((srv) => this.pingServer(srv)));
+  }
+
+  /** True iff at least one server in this subscription has an in-flight probe. */
+  isSubPinging(subId: string): boolean {
+    const sub = this.list.find((s) => s.id === subId);
+    if (!sub) return false;
+    return sub.servers.some((srv) => this.pings[srv.id] === "pinging");
   }
 }
 

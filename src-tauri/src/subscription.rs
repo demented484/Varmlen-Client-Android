@@ -143,31 +143,78 @@ pub struct ImportResult {
     pub description: Option<String>,
 }
 
-/// Collect the leading `# …` comment block (until the first non-comment
-/// non-blank line). Returned as a single string with newlines, or None.
-pub fn extract_description(body: &str) -> Option<String> {
+/// Metadata keys that panels (Marzban / Happ-style) inline into the body as
+/// `#key: value` lines, duplicating the HTTP response headers. These are NOT
+/// human-readable description — they carry client settings — so we route them
+/// to metadata and keep them out of the shown description.
+fn is_meta_key(key: &str) -> bool {
+    matches!(
+        key,
+        "profile-title"
+            | "profile-update-interval"
+            | "support-url"
+            | "profile-web-page-url"
+            | "subscription-userinfo"
+            | "announce"
+            | "hide-settings"
+            | "subscriptions-collapse"
+            | "subscriptions-expand-now"
+            | "encrypted-subscription"
+            | "allow-insecure"
+            | "subscription-ping-onopen-enabled"
+            | "mux-enable"
+            | "mux-tcp-connections"
+            | "mux-xudp-connections"
+            | "mux-quic"
+            | "routing"
+            | "dns"
+    )
+}
+
+/// Parse the leading comment block of a subscription body. Panels prepend two
+/// very different things there:
+///   1. `#key: value` lines duplicating the HTTP headers (profile-title,
+///      subscription-userinfo, mux-*, …) — collected into `headers`.
+///   2. Free-text lines (a real human note, or a base64 `announce` banner) —
+///      joined into `description`.
+/// Stops at the first non-comment, non-blank line (the first proxy URI).
+pub fn parse_body_meta(body: &str) -> (std::collections::HashMap<String, String>, Option<String>) {
     let text = decode_body(body);
-    let mut lines = Vec::<String>::new();
+    let mut headers = std::collections::HashMap::new();
+    let mut desc_lines = Vec::<String>::new();
     for raw in text.lines() {
         let line = raw.trim();
         if line.is_empty() {
-            if lines.is_empty() {
+            if headers.is_empty() && desc_lines.is_empty() {
+                continue; // skip leading blank lines
+            }
+            break; // blank line ends the comment block
+        }
+        let Some(rest) = line.strip_prefix('#') else {
+            break; // first real (non-comment) line — stop
+        };
+        let rest = rest.trim();
+        // `#key: value` where key looks like a metadata field → header, not desc.
+        if let Some((k, v)) = rest.split_once(':') {
+            let key = k.trim().to_ascii_lowercase();
+            if is_meta_key(&key) {
+                headers.insert(key, v.trim().to_string());
                 continue;
-            } else {
-                break;
             }
         }
-        if let Some(rest) = line.strip_prefix('#') {
-            lines.push(rest.trim().to_string());
-        } else {
-            break;
-        }
+        desc_lines.push(rest.to_string());
     }
-    if lines.is_empty() {
+    let description = if desc_lines.is_empty() {
         None
     } else {
-        Some(lines.join("\n"))
-    }
+        Some(desc_lines.join("\n"))
+    };
+    (headers, description)
+}
+
+/// Backwards-compatible wrapper: just the free-text description part.
+pub fn extract_description(body: &str) -> Option<String> {
+    parse_body_meta(body).1
 }
 
 /// Schemes we know how to parse.
@@ -513,6 +560,40 @@ mod tests {
         let body = "# c\nvless://a@h-a:443?type=tcp&security=reality#A\nvless://b@h-b:443?type=xhttp&security=reality#B\ngarbage";
         let v = parse_subscription(body);
         assert_eq!(v.len(), 2);
+    }
+
+    #[test]
+    fn inline_headers_are_meta_not_description() {
+        // Marzban / Happ-style: panel inlines #key: value lines at the top.
+        // They must go to metadata, NOT be shown as the description.
+        let body = concat!(
+            "#profile-title: KurtaVPN\n",
+            "#profile-update-interval: 3\n",
+            "#subscription-userinfo: upload=10; download=20; total=0; expire=1780236569\n",
+            "#mux-enable: 1\n",
+            "#announce: base64:0J/RgNC40LLQtdGC\n", // "Привет"
+            "vless://a@h-a:443?type=tcp&security=reality#A\n",
+        );
+        let (headers, desc) = parse_body_meta(body);
+        assert_eq!(headers.get("profile-title").map(String::as_str), Some("KurtaVPN"));
+        assert_eq!(headers.get("mux-enable").map(String::as_str), Some("1"));
+        assert!(headers.contains_key("subscription-userinfo"));
+        // None of the #key: value lines leak into description.
+        assert!(desc.is_none(), "description should be empty, got {desc:?}");
+
+        // And the inline userinfo parses into meta via the same path headers do.
+        let m = parse_headers(|name| headers.get(name).cloned());
+        assert_eq!(m.total_bytes, Some(0));
+        assert_eq!(m.upload_bytes, Some(10));
+        assert_eq!(m.expires_at_unix, Some(1780236569));
+    }
+
+    #[test]
+    fn freetext_comment_is_description() {
+        let body = "# Обходы внизу списка\nvless://a@h-a:443?type=tcp&security=reality#A";
+        let (headers, desc) = parse_body_meta(body);
+        assert!(headers.is_empty());
+        assert_eq!(desc.as_deref(), Some("Обходы внизу списка"));
     }
 
     #[test]
