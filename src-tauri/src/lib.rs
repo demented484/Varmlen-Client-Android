@@ -3,6 +3,7 @@ mod core;
 mod split;
 mod storage;
 mod subscription;
+mod tray;
 mod vpn;
 mod xray;
 
@@ -193,6 +194,13 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        // Single-instance MUST be the first plugin: a second launch (e.g. the
+        // user clicking the .desktop again while it's in the tray) just focuses
+        // the running window instead of spawning a duplicate process — which is
+        // what made memory pile up across "restarts".
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            tray::show_main(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             parse_vless_uri,
@@ -214,44 +222,51 @@ pub fn run() {
             vpn::grant_caps,
             vpn::tcp_ping_host,
             vpn::proxy_get_ping,
+            tray::set_tray_status,
+            tray::set_close_to_tray,
+            tray::set_autostart,
+            tray::autostart_status,
             storage::read_legacy_storage
         ])
         .on_window_event(|window, event| {
-            // Closing the window must tear the VPN down too — otherwise xray
-            // keeps the tunnel up long after the GUI is gone, and the user is
-            // stuck on the tunnel with no UI to disconnect.
-            //
-            // Tauri exits the process as soon as this handler returns, racing
-            // the Unix-socket round-trip to the helper. We block the default
-            // close, run the disconnect on a worker thread (sockets can
-            // block), then ask the app to exit via AppHandle::exit which is
-            // thread-safe and routes back through the event loop. Calling
-            // `window.destroy()` from a worker thread is NOT safe in Tauri 2
-            // — UI ops must happen on the main thread.
+            // Closing the window either hides it to the tray (VPN keeps running)
+            // or fully quits — per the user's setting. An abrupt process exit is
+            // still cleaned up by the RunEvent::Exit handler below.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 use tauri::Manager;
                 api.prevent_close();
-                let app = window.app_handle().clone();
-                // Run on Tauri's tokio pool — vpn_disconnect is async now
-                // and we need a runtime context to await it.
-                tauri::async_runtime::spawn(async move {
-                    let _ = vpn::vpn_disconnect(app.clone()).await;
-                    // Beat so the tunnel is fully torn down before the next
-                    // launch, not still mid-teardown.
-                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                    app.exit(0);
-                });
+                if tray::close_to_tray() {
+                    let _ = window.hide();
+                } else {
+                    tray::quit_app(window.app_handle());
+                }
             }
         })
         .setup(|app| {
+            use tauri::Manager;
             // Seed the bundled xray into the core dir if nothing is installed,
             // so the app has a working core on first launch even when GitHub is
             // unreachable (censored networks). No-op once a core exists.
             core::seed_bundled_core(app.handle());
+            // System tray (status + connect/disconnect + quit).
+            tray::build_tray(app.handle())?;
+            // Launched at login with `--minimized` → start straight to the tray.
+            if tray::launched_minimized() {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
             // Devtools stay available on demand (right-click → Inspect, or the
             // shortcut) in debug builds; we just don't pop them open on launch.
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Best-effort: drop the tunnel so xray never outlives the process,
+            // whatever caused the exit (tray Quit already disconnected cleanly).
+            if let tauri::RunEvent::Exit = event {
+                vpn::teardown_on_exit(app_handle);
+            }
+        });
 }

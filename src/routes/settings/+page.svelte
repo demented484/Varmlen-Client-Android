@@ -3,8 +3,42 @@
   import { settings, type VpnMode, type PingMethod } from "$lib/settings.svelte";
   import { i18n, t, LANGUAGES, type Lang } from "$lib/i18n.svelte";
   import { core } from "$lib/core.svelte";
-  import { capsGranted, grantCaps } from "$lib/api";
+  import { capsGranted, grantCaps, autostartStatus, setAutostart } from "$lib/api";
   import Dropdown from "$lib/components/Dropdown.svelte";
+  import { onMount } from "svelte";
+
+  // Autostart lives in ~/.config/autostart (backend is the source of truth);
+  // sync the toggles from it on open. `minimized` only applies when enabled.
+  let autostart = $state(false);
+  let autostartMinimized = $state(false);
+  onMount(async () => {
+    try {
+      const s = await autostartStatus();
+      autostart = s.enabled;
+      autostartMinimized = s.minimized;
+    } catch (e) {
+      console.error("autostart status:", e);
+    }
+  });
+  async function toggleAutostart(on: boolean) {
+    autostart = on;
+    if (!on) autostartMinimized = false;
+    try {
+      await setAutostart(on, autostartMinimized);
+    } catch (e) {
+      console.error("set autostart:", e);
+    }
+  }
+  async function toggleAutostartMinimized(on: boolean) {
+    autostartMinimized = on;
+    if (autostart) {
+      try {
+        await setAutostart(true, on);
+      } catch (e) {
+        console.error("set autostart:", e);
+      }
+    }
+  }
 
   const modeOptions = $derived([
     { value: "tun", label: t("mode.tun") },
@@ -138,7 +172,7 @@
   <h1>{t("settings.title")}</h1>
 </header>
 
-<main class="scroll">
+<main class="scroll fade-y">
   <section>
     <h2>{t("settings.appearance")}</h2>
     <div class="card theme-card">
@@ -221,6 +255,49 @@
             type="checkbox"
             checked={settings.allowLan}
             onchange={(e) => settings.setAllowLan((e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span class="slider"></span>
+        </span>
+      </label>
+      <label class="row">
+        <div class="row-text">
+          <div class="row-title">{t("settings.closeToTray")}</div>
+          <div class="row-sub muted">{t("settings.closeToTraySub")}</div>
+        </div>
+        <span class="switch">
+          <input
+            type="checkbox"
+            checked={settings.closeToTray}
+            onchange={(e) => settings.setCloseToTray((e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span class="slider"></span>
+        </span>
+      </label>
+      <label class="row">
+        <div class="row-text">
+          <div class="row-title">{t("settings.autostart")}</div>
+          <div class="row-sub muted">{t("settings.autostartSub")}</div>
+        </div>
+        <span class="switch">
+          <input
+            type="checkbox"
+            checked={autostart}
+            onchange={(e) => toggleAutostart((e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span class="slider"></span>
+        </span>
+      </label>
+      <label class="row" class:disabled={!autostart}>
+        <div class="row-text">
+          <div class="row-title">{t("settings.autostartMinimized")}</div>
+          <div class="row-sub muted">{t("settings.autostartMinimizedSub")}</div>
+        </div>
+        <span class="switch">
+          <input
+            type="checkbox"
+            checked={autostartMinimized}
+            disabled={!autostart}
+            onchange={(e) => toggleAutostartMinimized((e.currentTarget as HTMLInputElement).checked)}
           />
           <span class="slider"></span>
         </span>
@@ -451,7 +528,9 @@
        visible gap from the app edge to the panel edge is identical on
        both sides. */
     overflow-y: scroll;
-    padding: 0 14px 24px 20px;
+    /* Top padding clears the fade-y mask so the first section label isn't
+       dimmed at rest. */
+    padding: 12px 14px 24px 20px;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -514,6 +593,11 @@
   }
   .row + .row {
     border-top: 1px solid var(--border);
+  }
+  /* Sub-setting that only applies when its parent toggle is on. */
+  .row.disabled {
+    opacity: 0.45;
+    cursor: default;
   }
   .row:hover {
     background: var(--bg-elev-2);

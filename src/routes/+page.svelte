@@ -101,6 +101,7 @@
   }
 </script>
 
+<div class="home">
 <header class="topbar">
   <button class="icon-btn" onclick={() => (showImport = true)} aria-label="Add subscription">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -109,8 +110,7 @@
   </button>
 </header>
 
-<main class="scroll">
-  <section class="hero">
+<section class="hero">
     <button
       class="power"
       data-status={conn.status}
@@ -136,6 +136,8 @@
       <button class="link-btn" onclick={() => conn.clearDrop()}>{t("conn.allowTraffic")}</button>
     {/if}
   </section>
+
+  <main class="scroll fade-y">
 
   {#each subs.ordered as sub (sub.id)}
     <section class="sub-card" class:pinned={sub.pinned}>
@@ -305,6 +307,7 @@
     <div class="empty muted">{t("home.empty")}</div>
   {/if}
 </main>
+</div>
 
 {#if infoFor}
   <div class="modal-backdrop" onclick={() => (infoFor = null)} role="presentation">
@@ -449,6 +452,14 @@
 {/if}
 
 <style>
+  /* Flex column so the top bar + power-button hero stay fixed and only the
+     subscriptions list scrolls. */
+  .home {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+  }
   .topbar {
     display: flex;
     align-items: center;
@@ -491,8 +502,9 @@
   }
 
   .scroll {
-    position: absolute;
-    inset: 56px 0 0 0;
+    /* Fills the space under the fixed hero and is the only scrolling region. */
+    flex: 1;
+    min-height: 0;
     /* Always show the scrollbar (6px, see app.css) and mirror its width on
        the left via padding, so the panels sit centred regardless of scroll
        state. `scrollbar-gutter: stable both-edges` would do this, but it's
@@ -500,18 +512,19 @@
        which is the asymmetric look we want to avoid. */
     overflow-y: scroll;
     overflow-x: hidden;
-    padding: 0 14px 24px 20px;
+    padding: 8px 14px 24px 20px;
   }
 
-  /* ---------- power hero ---------- */
+  /* ---------- power hero (fixed, above the scroll) ---------- */
   .hero {
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
-    /* Extra bottom padding pushes the subscriptions list down so it doesn't
-       feel glued to the CONNECTED status text. */
-    padding: 38px 0 32px;
+    /* Raised up toward the top bar — minimal top padding so the power button
+       and the subscriptions panel sit higher. */
+    padding: 4px 0 16px;
     position: relative;
   }
   .power {

@@ -9,27 +9,9 @@
   import { subs } from "$lib/subs.svelte";
   import { split } from "$lib/split.svelte";
   import { settings } from "$lib/settings.svelte";
-  import { readLegacyStorage, capsGranted, grantCaps } from "$lib/api";
+  import { readLegacyStorage, setTrayStatus, setCloseToTray } from "$lib/api";
+  import { listen } from "@tauri-apps/api/event";
   import "$lib/theme.svelte"; // module-level init applies persisted theme
-
-  /** Grant network capabilities (one pkexec prompt) on the very first launch,
-   *  once the cores are ready. Also removes the legacy root helper if present.
-   *  Tracked via localStorage so we don't prompt every time — the user can
-   *  always do it manually in Settings. */
-  async function maybeGrantCaps() {
-    if (typeof window === "undefined") return;
-    if (localStorage.getItem("varmlen.capsAutoTried") === "1") return;
-    try {
-      if (await capsGranted()) {
-        localStorage.setItem("varmlen.capsAutoTried", "1");
-        return;
-      }
-      localStorage.setItem("varmlen.capsAutoTried", "1");
-      await grantCaps();
-    } catch (e) {
-      console.warn("[caps] auto-grant:", e);
-    }
-  }
 
   /** One-shot migration on first launch in a new origin (e.g. release vs dev
    *  use different WebKit storage). Pulls everything from the previous
@@ -60,14 +42,13 @@
     return currentPath.startsWith(path);
   }
 
-  // First-launch chores: migrate prior-origin localStorage, install the core
-  // (auto), then prompt for the privileged helper (once).
+  // First-launch chores: migrate prior-origin localStorage + install the core.
+  // Network permissions are NOT requested here — they're prompted on the first
+  // connect (when actually needed), so launch is non-intrusive.
   onMount(async () => {
     await migrateLegacyStorage();
     // xray is the sole core (native TUN + transport).
     await core.autoInit();
-    // Grant caps last (needs xray on disk) — also migrates off the old helper.
-    await maybeGrantCaps();
   });
 
   // Reflect the real VPN state on launch: if xray is still running (e.g. the
@@ -78,6 +59,24 @@
   // Auto-refresh subscriptions on their server-advertised interval (the UI
   // shows "auto-update Nh"); checks on launch and periodically thereafter.
   onMount(() => subs.startAutoRefresh());
+
+  // Tray "Connect / Disconnect" menu item routes back here (the connect logic
+  // — current server + split config — lives in the frontend).
+  onMount(() => {
+    const un = listen("tray://toggle", () => void conn.toggle());
+    return () => void un.then((f) => f());
+  });
+
+  // Keep the tray tooltip in sync with the (localized) connection status.
+  $effect(() => {
+    void setTrayStatus(t(`status.${conn.status}`));
+  });
+
+  // Push the close-to-tray preference to the backend (on launch + on change),
+  // since the window-close handler lives in Rust.
+  $effect(() => {
+    void setCloseToTray(settings.closeToTray);
+  });
 
   // Live-reconnect when the config changes (location / split / mode / settings)
   // while connected. Reading these here registers them as effect dependencies.

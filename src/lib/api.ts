@@ -262,3 +262,33 @@ export function formatExpires(unix: number | null): string | null {
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
+
+// --- tray + autostart -------------------------------------------------------
+
+/** Reflect the connection status in the tray tooltip. */
+export async function setTrayStatus(statusLabel: string): Promise<void> {
+  await invoke("set_tray_status", { statusLabel });
+}
+
+/** Whether closing the window hides to the tray (true) or fully quits (false). */
+export async function setCloseToTray(enabled: boolean): Promise<void> {
+  await invoke("set_close_to_tray", { enabled });
+}
+
+export interface AutostartState {
+  enabled: boolean;
+  minimized: boolean;
+}
+
+/** Whether the ~/.config/autostart entry exists, and if it starts minimized. */
+export async function autostartStatus(): Promise<AutostartState> {
+  return invoke<AutostartState>("autostart_status");
+}
+
+/** Write/remove the autostart entry (Linux). `minimized` adds `--minimized`. */
+export async function setAutostart(
+  enabled: boolean,
+  minimized: boolean,
+): Promise<void> {
+  await invoke("set_autostart", { enabled, minimized });
+}

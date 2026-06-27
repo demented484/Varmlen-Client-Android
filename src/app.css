@@ -264,3 +264,23 @@ a {
 .list-row.tappable:hover {
   background: var(--bg-elev-2);
 }
+
+/* ---------- soft fade at the top/bottom of scroll panels ----------
+   Replaces the hard clip where content meets the top bar / tab bar with a
+   gentle fade. Apply alongside a scroll container (.scroll / .page). */
+.fade-y {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 10px,
+    #000 calc(100% - 10px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 10px,
+    #000 calc(100% - 10px),
+    transparent 100%
+  );
+}

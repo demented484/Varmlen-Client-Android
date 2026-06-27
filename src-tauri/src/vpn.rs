@@ -164,6 +164,23 @@ fn terminate_gracefully(child: &mut Child) {
 /// killswitch FIRST so a partial teardown never black-holes the box, then
 /// SIGTERM xray (closes the tun fd), then the helper's `cleanup` (route-down +
 /// killswitch-down + stray-TUN delete).
+/// Fast best-effort teardown for app exit: SIGKILL xray (no graceful wait —
+/// we're quitting) + drop the killswitch + cleanup, so the tunnel never
+/// outlives the process. Idempotent. Called from the RunEvent::Exit handler.
+pub(crate) fn teardown_on_exit(app: &tauri::AppHandle) {
+    INTENTIONAL_STOP.store(true, Ordering::SeqCst);
+    if let Some(probe) = probe_bin(app) {
+        let _ = Command::new(&probe).arg("killswitch-down").status();
+    }
+    if let Some(mut c) = xray_child().lock().unwrap().take() {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+    if let Some(probe) = probe_bin(app) {
+        let _ = Command::new(&probe).arg("cleanup").status();
+    }
+}
+
 fn stop_all(app: &tauri::AppHandle) {
     if let Some(probe) = probe_bin(app) {
         let _ = Command::new(&probe).arg("killswitch-down").status();
@@ -471,11 +488,15 @@ pub async fn vpn_connect(
             return Ok(HelperResponse::connected(pid));
         }
 
-        // TUN mode: xray owns the native tun and needs CAP_NET_ADMIN.
+        // TUN mode: xray owns the native tun and needs CAP_NET_ADMIN. If the
+        // permissions aren't granted yet, prompt for them now (pkexec) — on the
+        // first connect — instead of nagging at launch.
         if !has_cap(&xray_bin, "cap_net_admin") {
-            return Err(
-                "xray lacks network permissions — click \"Grant network permissions\" in Settings".into(),
-            );
+            request_setcap_blocking(&app)
+                .map_err(|e| format!("granting network permissions: {e}"))?;
+            if !has_cap(&xray_bin, "cap_net_admin") {
+                return Err("network permissions were not granted".into());
+            }
         }
         let server_ips = resolve_ips(&server_host);
         if server_ips.is_empty() {

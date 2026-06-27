@@ -101,7 +101,7 @@
   <h1>{t("split.title")}</h1>
 </header>
 
-<div class="page">
+<div class="page fade-y">
 
   <div class="segmented" role="tablist">
     <button class:active={tab === "apps"} onclick={() => (tab = "apps")} role="tab" aria-selected={tab === "apps"}>{t("split.apps")}</button>
@@ -271,7 +271,8 @@
     /* See +page.svelte for the rationale on always-on scrollbar + mirrored
        padding instead of `scrollbar-gutter: stable both-edges`. */
     overflow-y: scroll;
-    padding: 0 14px 24px 20px;
+    /* Top padding clears the fade-y mask so the tabs aren't dimmed at rest. */
+    padding: 12px 14px 24px 20px;
     display: flex;
     flex-direction: column;
     gap: 12px;
