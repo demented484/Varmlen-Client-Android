@@ -429,6 +429,29 @@ pub async fn vpn_connect(
     killswitch: bool,
     allow_lan: bool,
 ) -> Result<HelperResponse, String> {
+    // Android: hand the generated config to the VpnService bridge. The native
+    // tun + tun2socks + bundled xray live in the Kotlin VpnPlugin; the kill
+    // switch / routing are the OS's job there.
+    #[cfg(target_os = "android")]
+    {
+        let _ = killswitch;
+        let xray_cfg = serde_json::to_string(&build_xray_config(
+            &server, &split, &mode, TunMode::Tun2socks, allow_lan,
+        ))
+        .map_err(|e| e.to_string())?;
+        let apps_allow = mode == "selective";
+        crate::mobile_vpn::connect(
+            &app,
+            xray_cfg,
+            crate::xray::XRAY_SOCKS_PORT,
+            split.apps.clone(),
+            apps_allow,
+        )?;
+        return Ok(HelperResponse::connected(0));
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
     // Hold the op lock for the whole connect so it can't interleave with another
     // connect/disconnect and orphan a tunnel.
     let _op = vpn_op_lock().lock().await;
@@ -573,6 +596,7 @@ pub async fn vpn_connect(
     })
     .await
     .map_err(|e| format!("join: {e}"))?
+    }
 }
 
 /// Validate an xray config with `xray run -test -c <file>` before launch.
@@ -597,27 +621,47 @@ fn validate_xray(bin: &PathBuf, cfg: &PathBuf) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn vpn_disconnect(app: tauri::AppHandle) -> Result<HelperResponse, String> {
-    let _op = vpn_op_lock().lock().await;
-    // A user-initiated stop: silence the crash watcher and drop to disconnected
-    // (this also lifts the kill switch from a "dropped" state, restoring traffic).
-    INTENTIONAL_STOP.store(true, Ordering::SeqCst);
-    let _ = tokio::task::spawn_blocking(move || stop_all(&app)).await;
-    set_phase("disconnected");
-    Ok(HelperResponse::disconnected())
+    #[cfg(target_os = "android")]
+    {
+        crate::mobile_vpn::disconnect(&app)?;
+        return Ok(HelperResponse::disconnected());
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _op = vpn_op_lock().lock().await;
+        // A user-initiated stop: silence the crash watcher and drop to
+        // disconnected (also lifts a "dropped" kill switch, restoring traffic).
+        INTENTIONAL_STOP.store(true, Ordering::SeqCst);
+        let _ = tokio::task::spawn_blocking(move || stop_all(&app)).await;
+        set_phase("disconnected");
+        Ok(HelperResponse::disconnected())
+    }
 }
 
 #[tauri::command]
-pub async fn vpn_status() -> Result<HelperResponse, String> {
-    // The crash watcher owns the "dropped" phase (tunnel died, kill switch
-    // holding) — report it distinctly so the UI doesn't claim "disconnected".
-    if conn_phase().lock().unwrap().as_str() == "dropped" {
-        return Ok(HelperResponse::dropped());
+pub async fn vpn_status(app: tauri::AppHandle) -> Result<HelperResponse, String> {
+    #[cfg(target_os = "android")]
+    {
+        return Ok(if crate::mobile_vpn::is_running(&app) {
+            HelperResponse::connected(0)
+        } else {
+            HelperResponse::disconnected()
+        });
     }
-    // The single xray process alive → connected (tun or proxy mode).
-    if let Some(pid) = pid_of(xray_child()) {
-        return Ok(HelperResponse::connected(pid));
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = &app;
+        // The crash watcher owns the "dropped" phase (tunnel died, kill switch
+        // holding) — report it distinctly so the UI doesn't claim "disconnected".
+        if conn_phase().lock().unwrap().as_str() == "dropped" {
+            return Ok(HelperResponse::dropped());
+        }
+        // The single xray process alive → connected (tun or proxy mode).
+        if let Some(pid) = pid_of(xray_child()) {
+            return Ok(HelperResponse::connected(pid));
+        }
+        Ok(HelperResponse::disconnected())
     }
-    Ok(HelperResponse::disconnected())
 }
 
 /// Whether the cores have the capabilities they need (replaces the old

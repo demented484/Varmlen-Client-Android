@@ -23,6 +23,18 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+        // We ship arm64 native libs (xray + tun2socks); build the JNI shim for it.
+        ndk { abiFilters += listOf("arm64-v8a") }
+    }
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/jni/CMakeLists.txt")
+        }
+    }
+    // Extract native libs to disk so the bundled xray binary (libxray.so) can be
+    // exec'd from nativeLibraryDir.
+    packaging {
+        jniLibs.useLegacyPackaging = true
     }
     buildTypes {
         getByName("debug") {

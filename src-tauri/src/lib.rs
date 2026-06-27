@@ -1,5 +1,7 @@
 mod apps;
 mod core;
+#[cfg(target_os = "android")]
+mod mobile_vpn;
 mod split;
 mod storage;
 mod subscription;
@@ -202,6 +204,12 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             tray::show_main(app);
         }));
+    }
+
+    // Android VPN bridge (registers the Kotlin VpnPlugin → VpnService).
+    #[cfg(target_os = "android")]
+    {
+        builder = builder.plugin(mobile_vpn::init());
     }
 
     builder
