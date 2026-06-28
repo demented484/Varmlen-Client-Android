@@ -1,9 +1,12 @@
 package app.varmlen.client
 
 import android.app.Activity
+import android.content.BroadcastReceiver
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.webkit.WebView
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
@@ -44,6 +47,30 @@ class ConnectArgs {
 @TauriPlugin
 class VpnPlugin(private val activity: Activity) : Plugin(activity) {
     private var pendingArgs: ConnectArgs? = null
+
+    // Bridges the VpnService's (other-process) state broadcast to a JS event, so
+    // the UI updates instantly on a notification/tile/system disconnect.
+    private val stateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) {
+            val running = i?.getBooleanExtra(VarmlenVpnService.EXTRA_RUNNING, false) ?: false
+            val data = JSObject()
+            data.put("running", running)
+            trigger("vpnState", data)
+        }
+    }
+
+    override fun load(webView: WebView) {
+        super.load(webView)
+        val filter = IntentFilter(VarmlenVpnService.ACTION_STATE)
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                activity.registerReceiver(stateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                activity.registerReceiver(stateReceiver, filter)
+            }
+        } catch (_: Throwable) {}
+    }
 
     @Command
     fun connect(invoke: Invoke) {

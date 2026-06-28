@@ -11,6 +11,7 @@
   import { settings } from "$lib/settings.svelte";
   import { readLegacyStorage, setTrayStatus, setCloseToTray, setStatusBar } from "$lib/api";
   import { listen } from "@tauri-apps/api/event";
+  import { addPluginListener } from "@tauri-apps/api/core";
   import { theme } from "$lib/theme.svelte";
   import { isAndroid } from "$lib/platform";
 
@@ -67,12 +68,25 @@
     return () => document.removeEventListener("visibilitychange", onVis);
   });
 
-  // While connected, poll the real state so disconnecting from the notification
-  // / tile (or a system revoke) reflects in the UI even with the app open.
+  // Android: the VpnService pushes a state event on connect / disconnect (incl.
+  // from the notification, tile, system revoke, or an xray crash). Apply it
+  // instantly — no polling lag.
+  onMount(() => {
+    if (!isAndroid) return;
+    let handle: { unregister: () => void } | undefined;
+    addPluginListener("varmlenvpn", "vpnState", (e: { running: boolean }) => {
+      conn.applyExternalState(e.running);
+    })
+      .then((h) => (handle = h))
+      .catch(() => {});
+    return () => handle?.unregister();
+  });
+
+  // Fallback poll in case a state event is missed, while connected.
   onMount(() => {
     const id = setInterval(() => {
       if (conn.status === "connected") void conn.refresh();
-    }, 3000);
+    }, 500);
     return () => clearInterval(id);
   });
 

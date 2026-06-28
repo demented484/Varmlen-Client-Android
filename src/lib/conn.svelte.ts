@@ -181,6 +181,21 @@ class ConnStore {
       // helper unreachable — leave UI as is
     }
   }
+
+  /** Native-pushed state (Android): the VpnService broadcasts on connect, on a
+   *  notification/tile/system disconnect, and on an xray crash — apply it
+   *  instantly, no status round-trip. "connecting" is left for connect() to
+   *  resolve. */
+  applyExternalState(running: boolean): void {
+    if (running) {
+      this.status = "connected";
+      this.lastConnectedAt = Date.now();
+      this.blockedByKillswitch = false;
+    } else if (this.status === "connected" || this.status === "dropped") {
+      this.status = "disconnected";
+      this.blockedByKillswitch = false;
+    }
+  }
 }
 
 export const conn = new ConnStore();

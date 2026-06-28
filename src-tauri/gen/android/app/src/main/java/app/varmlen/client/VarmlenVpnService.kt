@@ -24,6 +24,10 @@ class VarmlenVpnService : VpnService() {
     private var tun: ParcelFileDescriptor? = null
     private var xray: Process? = null
 
+    /** Set during an intentional teardown so the xray-exit watcher doesn't treat
+     *  a deliberate kill as a crash. */
+    @Volatile private var stopping = false
+
     // Live notification (speed + uptime), refreshed once a second.
     private val notifHandler = Handler(Looper.getMainLooper())
     private var connectedAt = 0L
@@ -40,6 +44,11 @@ class VarmlenVpnService : VpnService() {
     companion object {
         const val ACTION_CONNECT = "app.varmlen.client.CONNECT"
         const val ACTION_DISCONNECT = "app.varmlen.client.DISCONNECT"
+        /** Broadcast (package-local) the app's plugin listens to, so the UI
+         *  updates instantly when the VPN is toggled outside the app (notification
+         *  Disconnect, tile, system revoke) without polling. */
+        const val ACTION_STATE = "app.varmlen.client.VPN_STATE"
+        const val EXTRA_RUNNING = "running"
         const val EXTRA_CONFIG = "config"
         const val EXTRA_SOCKS_PORT = "socksPort"
         const val EXTRA_DNS = "dns"
@@ -176,20 +185,28 @@ class VarmlenVpnService : VpnService() {
         // single work thread.
         teardown()
         startForegroundSafe()
+        stopping = false
 
         // 1) xray as a local SOCKS proxy (the generated config binds 127.0.0.1:socksPort).
         val cfgFile = File(filesDir, "xray.json").apply { writeText(config) }
         val xrayBin = File(applicationInfo.nativeLibraryDir, "libxray.so")
         log("exec xray: ${xrayBin.absolutePath} (exists=${xrayBin.exists()})")
-        xray = ProcessBuilder(xrayBin.absolutePath, "run", "-c", cfgFile.absolutePath)
+        val proc = ProcessBuilder(xrayBin.absolutePath, "run", "-c", cfgFile.absolutePath)
             .directory(filesDir)
             .redirectErrorStream(true)
             .start()
-        // Drain xray output into the log so config errors are visible.
+        xray = proc
+        // Drain xray output into the log; when the stream closes, xray has exited.
+        // If that wasn't us tearing down, treat it as a crash and disconnect (the
+        // UI updates instantly via broadcastState in stopAll).
         Thread {
             try {
-                xray?.inputStream?.bufferedReader()?.forEachLine { log("xray: $it") }
+                proc.inputStream.bufferedReader().forEachLine { log("xray: $it") }
             } catch (_: Throwable) {}
+            if (!stopping && proc === xray) {
+                log("xray exited unexpectedly — disconnecting")
+                notifHandler.post { stopAll() }
+            }
         }.apply { isDaemon = true; start() }
 
         // 2) the tun interface.
@@ -230,6 +247,7 @@ class VarmlenVpnService : VpnService() {
         TProxyService.TProxyStartService(hevFile.absolutePath, fd.fd)
 
         setWant(this, true)
+        broadcastState(true)
         // Start the per-second speed + uptime notification updates.
         connectedAt = System.currentTimeMillis()
         lastTx = 0L; lastRx = 0L; lastStatsAt = 0L
@@ -238,8 +256,17 @@ class VarmlenVpnService : VpnService() {
         log("connected")
     }
 
+    private fun broadcastState(running: Boolean) {
+        try {
+            sendBroadcast(
+                Intent(ACTION_STATE).setPackage(packageName).putExtra(EXTRA_RUNNING, running)
+            )
+        } catch (_: Throwable) {}
+    }
+
     /** Stop hev + xray + the tun, but leave the service running (used to restart). */
     private fun teardown() {
+        stopping = true
         notifHandler.removeCallbacks(statsTick)
         try { TProxyService.TProxyStopService() } catch (_: Throwable) {}
         try { xray?.destroy() } catch (_: Throwable) {}
@@ -250,6 +277,7 @@ class VarmlenVpnService : VpnService() {
 
     private fun stopAll() {
         setWant(this, false)
+        broadcastState(false)
         teardown()
         try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Throwable) {}
         stopSelf()
