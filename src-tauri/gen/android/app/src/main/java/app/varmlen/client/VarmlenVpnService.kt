@@ -67,13 +67,22 @@ class VarmlenVpnService : VpnService() {
          *  app's running services (works cross-process for our own service)
          *  rather than a persisted flag, so a flag left over after a reboot /
          *  force-stop / system disconnect can't show a phantom "connected". */
-        fun isRunning(ctx: Context): Boolean = try {
-            val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-            @Suppress("DEPRECATION")
-            am.getRunningServices(Int.MAX_VALUE).any {
-                it.service.className == VarmlenVpnService::class.java.name
-            }
-        } catch (_: Throwable) { false }
+        fun isRunning(ctx: Context): Boolean {
+            // Fast path: the want-flag flips to 0 the instant we tear down, so a
+            // disconnect (notification / tile / crash) reads immediately instead
+            // of waiting several seconds for getRunningServices to drop the
+            // already-stopped service.
+            if (!wantsRunning(ctx)) return false
+            // The flag can be a stale "1" after a reboot / force-stop, so confirm
+            // the service is actually alive before reporting connected.
+            return try {
+                val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+                @Suppress("DEPRECATION")
+                am.getRunningServices(Int.MAX_VALUE).any {
+                    it.service.className == VarmlenVpnService::class.java.name
+                }
+            } catch (_: Throwable) { false }
+        }
 
         /** Persisted "should be running" — used ONLY for START_STICKY restart
          *  recovery (do we re-establish after an OOM kill?), never for the UI. */
