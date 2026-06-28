@@ -52,6 +52,12 @@ class ConnStore {
   }
   /** Signature of the config last applied, to avoid redundant reconnects. */
   private lastSig: string | null = null;
+  /** When we last reached "connected". A status poll right after connecting can
+   *  falsely read "not running" (Android registers the service a beat late, and
+   *  the VPN-consent dialog resumes the activity mid-connect), so refresh() must
+   *  not downgrade within this grace window. */
+  private lastConnectedAt = 0;
+  private readonly CONNECT_GRACE_MS = 6000;
 
   /** Signature of everything that affects the generated config. Keyed on the
    *  stable host:port (NOT the per-entry id, which is regenerated on every
@@ -128,6 +134,7 @@ class ConnStore {
       if (remain > 0) await new Promise((r) => setTimeout(r, remain));
       if (!resp.ok) throw new Error(resp.error || "connection failed");
       this.status = "connected";
+      this.lastConnectedAt = Date.now();
     } catch (e) {
       const remain = MIN_CONNECTING_MS - (Date.now() - startedAt);
       if (remain > 0) await new Promise((r) => setTimeout(r, remain));
@@ -155,6 +162,7 @@ class ConnStore {
       const resp = await vpnStatus();
       if (resp.state === "connected") {
         this.status = "connected";
+        this.lastConnectedAt = Date.now();
         this.blockedByKillswitch = false;
       } else if (resp.state === "dropped") {
         this.status = "dropped";
@@ -162,8 +170,10 @@ class ConnStore {
         this.error = t("conn.dropped");
       } else if (
         resp.state === "disconnected" &&
-        (this.status === "connected" || this.status === "dropped")
+        (this.status === "connected" || this.status === "dropped") &&
+        Date.now() - this.lastConnectedAt > this.CONNECT_GRACE_MS
       ) {
+        // Don't trust a single "not running" poll right after connecting.
         this.status = "disconnected";
         this.blockedByKillswitch = false;
       }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { split, type Mode } from "$lib/split.svelte";
   import { listInstalledApps, appFromFile, pickFile, type InstalledApp } from "$lib/api";
   import { t } from "$lib/i18n.svelte";
@@ -37,6 +38,9 @@
     selected = new Set();
     if (installed.length > 0) return;
     pickerLoading = true;
+    // Let the modal paint before the (slow, first-time) app scan blocks on
+    // PackageManager + icon rasterisation, so it opens instantly.
+    await tick();
     try {
       installed = await listInstalledApps();
     } catch {
@@ -217,6 +221,9 @@
         </button>
       </header>
       <input type="search" placeholder={t("split.searchInstalled")} bind:value={pickerQuery} />
+      <div class="scan-bar" class:active={pickerLoading} aria-hidden="true">
+        <div class="scan-fill"></div>
+      </div>
 
       <div class="picker">
         {#if pickerLoading}
@@ -465,6 +472,29 @@
     color: var(--text);
   }
 
+  /* Indeterminate scan bar shown under the search while the app list loads. */
+  .scan-bar {
+    height: 0;
+    overflow: hidden;
+    border-radius: 2px;
+    background: var(--bg-elev-3);
+    transition: height var(--transition);
+  }
+  .scan-bar.active {
+    height: 3px;
+    margin-top: 2px;
+  }
+  .scan-fill {
+    height: 100%;
+    width: 40%;
+    border-radius: 2px;
+    background: var(--accent);
+    animation: scan 1.1s ease-in-out infinite;
+  }
+  @keyframes scan {
+    0% { margin-left: -40%; }
+    100% { margin-left: 100%; }
+  }
   .picker {
     /* Fixed height: the modal keeps its size as the search narrows results,
        instead of shrinking/jumping. Matching apps fill top-to-bottom + scroll. */

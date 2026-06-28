@@ -162,6 +162,13 @@ a {
   padding-bottom: calc(28px + env(safe-area-inset-bottom)) !important;
 }
 
+/* Bottom-sheet modals (add subscription, app picker, …) sit at the bottom edge;
+   pad them off the navigation inset so they don't slide under the 3-button bar.
+   env() is 0 with gesture nav / on desktop, so this is a no-op there. */
+.modal-backdrop {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 /* ---------- common ---------- */
 .btn {
   border: 1px solid var(--border);
