@@ -261,6 +261,238 @@ fn label_from(fragment: Option<&str>, host: &str, port: u16) -> String {
     }
 }
 
+/// Parse JSON-form import input into servers. Accepts an xray/v2ray config
+/// (object with an `outbounds` array), a single outbound object, an array of
+/// outbound objects and/or share-link strings, or an object embedding those
+/// under common keys (servers/links/proxies/configs/list).
+pub fn parse_json_subscription(body: &str) -> Vec<VlessServer> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    collect_json_servers(&v, &mut out, 0);
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|s| seen.insert(s.id.clone()));
+    out
+}
+
+fn is_proxy_protocol(p: &str) -> bool {
+    matches!(p, "vless" | "vmess" | "trojan" | "shadowsocks")
+}
+
+fn collect_json_servers(v: &serde_json::Value, out: &mut Vec<VlessServer>, depth: u8) {
+    if depth > 6 {
+        return;
+    }
+    match v {
+        serde_json::Value::Array(arr) => {
+            for el in arr {
+                collect_json_servers(el, out, depth + 1);
+            }
+        }
+        serde_json::Value::String(s) => {
+            let t = s.trim();
+            if is_supported_uri(t) {
+                if let Ok(srv) = parse_proxy_uri(t) {
+                    out.push(srv);
+                }
+            }
+        }
+        serde_json::Value::Object(obj) => {
+            // A proxy outbound: { "protocol": "vless", "settings": …, "streamSettings": … }.
+            if obj
+                .get("protocol")
+                .and_then(|p| p.as_str())
+                .map(is_proxy_protocol)
+                .unwrap_or(false)
+            {
+                if let Some(s) = parse_outbound(v) {
+                    out.push(s);
+                }
+                return;
+            }
+            // Otherwise recurse into the common container keys.
+            for key in ["outbounds", "servers", "links", "proxies", "configs", "list"] {
+                if let Some(child) = obj.get(key) {
+                    collect_json_servers(child, out, depth + 1);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn json_str(v: &serde_json::Value, key: &str) -> Option<String> {
+    v.get(key)
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+}
+
+fn json_port(v: Option<&serde_json::Value>) -> Option<u16> {
+    match v? {
+        serde_json::Value::Number(n) => n.as_u64().and_then(|p| u16::try_from(p).ok()),
+        serde_json::Value::String(st) => st.parse().ok(),
+        _ => None,
+    }
+}
+
+/// Map an xray streamSettings `network` back to our transport name (the inverse
+/// of `xray::xray_network`).
+fn normalize_network(net: &str) -> String {
+    match net {
+        "raw" | "tcp" => "tcp",
+        "splithttp" | "xhttp" => "xhttp",
+        "h2" => "http",
+        other => other,
+    }
+    .to_string()
+}
+
+/// Build a `VlessServer` from one xray outbound object (inverse of
+/// `xray::build_proxy_outbound` + `build_stream_settings`).
+fn parse_outbound(ob: &serde_json::Value) -> Option<VlessServer> {
+    let protocol = ob.get("protocol")?.as_str()?;
+    let settings = ob.get("settings");
+    let stream = ob.get("streamSettings");
+    let tag = ob.get("tag").and_then(|t| t.as_str()).unwrap_or("");
+    let label = |host: &str, port: u16| -> String {
+        if !tag.is_empty() && !matches!(tag, "proxy" | "direct" | "block" | "dns-out") {
+            tag.to_string()
+        } else {
+            format!("{host}:{port}")
+        }
+    };
+
+    let mut s = match protocol {
+        "vless" | "vmess" => {
+            let vnext = settings?.get("vnext")?.as_array()?.first()?;
+            let host = json_str(vnext, "address")?;
+            let port = json_port(vnext.get("port"))?;
+            let user = vnext.get("users")?.as_array()?.first()?;
+            let mut s = VlessServer::base(protocol, host.clone(), port, label(&host, port));
+            s.uuid = json_str(user, "id")?;
+            s.flow = json_str(user, "flow");
+            if protocol == "vmess" {
+                if let Some(scy) = json_str(user, "security") {
+                    s.raw_params.insert("scy".into(), scy);
+                }
+                if let Some(aid) = user.get("alterId").and_then(|x| x.as_u64()) {
+                    s.raw_params.insert("aid".into(), aid.to_string());
+                }
+            }
+            s
+        }
+        "trojan" => {
+            let srv = settings?.get("servers")?.as_array()?.first()?;
+            let host = json_str(srv, "address")?;
+            let port = json_port(srv.get("port"))?;
+            let pw = json_str(srv, "password")?;
+            let mut s = VlessServer::base("trojan", host.clone(), port, label(&host, port));
+            s.uuid = pw.clone();
+            s.password = Some(pw);
+            s.flow = json_str(srv, "flow");
+            s
+        }
+        "shadowsocks" => {
+            let srv = settings?.get("servers")?.as_array()?.first()?;
+            let host = json_str(srv, "address")?;
+            let port = json_port(srv.get("port"))?;
+            let mut s = VlessServer::base("shadowsocks", host.clone(), port, label(&host, port));
+            s.method = json_str(srv, "method");
+            s.password = json_str(srv, "password");
+            s
+        }
+        _ => return None,
+    };
+    apply_stream(&mut s, stream);
+    if is_balancer_sentinel(&s.host) {
+        return None;
+    }
+    Some(s)
+}
+
+fn apply_stream(s: &mut VlessServer, stream: Option<&serde_json::Value>) {
+    let Some(st) = stream else { return };
+    if let Some(net) = st.get("network").and_then(|n| n.as_str()) {
+        s.transport = normalize_network(net);
+    }
+    s.security = st
+        .get("security")
+        .and_then(|x| x.as_str())
+        .unwrap_or("none")
+        .to_string();
+
+    if let Some(r) = st.get("realitySettings") {
+        s.sni = json_str(r, "serverName");
+        s.public_key = json_str(r, "publicKey");
+        s.short_id = json_str(r, "shortId");
+        s.fingerprint = json_str(r, "fingerprint");
+        if let Some(spx) = json_str(r, "spiderX") {
+            s.raw_params.insert("spx".into(), spx);
+        }
+    }
+    if let Some(tls) = st.get("tlsSettings") {
+        if s.sni.is_none() {
+            s.sni = json_str(tls, "serverName");
+        }
+        if s.fingerprint.is_none() {
+            s.fingerprint = json_str(tls, "fingerprint");
+        }
+        if tls.get("allowInsecure").and_then(|x| x.as_bool()).unwrap_or(false) {
+            s.raw_params.insert("allowInsecure".into(), "1".into());
+        }
+        if let Some(alpn) = tls.get("alpn").and_then(|a| a.as_array()) {
+            let list: Vec<String> = alpn.iter().filter_map(|x| x.as_str().map(String::from)).collect();
+            if !list.is_empty() {
+                s.raw_params.insert("alpn".into(), list.join(","));
+            }
+        }
+    }
+
+    match s.transport.as_str() {
+        "ws" => {
+            if let Some(ws) = st.get("wsSettings") {
+                s.path = json_str(ws, "path");
+                if let Some(h) = ws.get("headers").and_then(|h| h.get("Host")).and_then(|x| x.as_str()) {
+                    s.raw_params.insert("host".into(), h.into());
+                }
+            }
+        }
+        "xhttp" => {
+            if let Some(x) = st.get("xhttpSettings").or_else(|| st.get("splithttpSettings")) {
+                s.path = json_str(x, "path");
+                s.mode = json_str(x, "mode");
+                if let Some(h) = json_str(x, "host") {
+                    s.raw_params.insert("host".into(), h);
+                }
+            }
+        }
+        "httpupgrade" => {
+            if let Some(hu) = st.get("httpupgradeSettings") {
+                s.path = json_str(hu, "path");
+                if let Some(h) = json_str(hu, "host") {
+                    s.raw_params.insert("host".into(), h);
+                }
+            }
+        }
+        "grpc" => {
+            if let Some(g) = st.get("grpcSettings") {
+                if let Some(svc) = json_str(g, "serviceName") {
+                    s.raw_params.insert("serviceName".into(), svc);
+                }
+                if g.get("multiMode").and_then(|m| m.as_bool()).unwrap_or(false) {
+                    s.mode = Some("multi".into());
+                }
+                if let Some(auth) = json_str(g, "authority") {
+                    s.raw_params.insert("authority".into(), auth);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Parse a single `vless://` URI.
 pub fn parse_vless(uri: &str) -> Result<VlessServer, ParseError> {
     let url = Url::parse(uri.trim()).map_err(|e| ParseError::InvalidUri(e.to_string()))?;

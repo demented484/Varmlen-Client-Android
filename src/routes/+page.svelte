@@ -7,6 +7,7 @@
   import type { Subscription, ServerEntry } from "$lib/subs.svelte";
 
   let showImport = $state(false);
+  let importMode = $state<"choose" | "manual">("choose");
   let subUrl = $state("");
   let importError = $state<string | null>(null);
   let openMenuFor = $state<string | null>(null);
@@ -82,6 +83,13 @@
   const statusLabel = $derived(t(`status.${conn.status}`));
 
 
+  function openImport(): void {
+    importMode = "choose";
+    subUrl = "";
+    importError = null;
+    showImport = true;
+  }
+
   async function importSubscription(): Promise<void> {
     if (!subUrl.trim()) return;
     importError = null;
@@ -91,7 +99,29 @@
       showImport = false;
     } catch (e) {
       importError = e instanceof Error ? e.message : String(e);
+      importMode = "manual";
     }
+  }
+
+  /** Quick path: read the clipboard and import it straight away. */
+  async function importFromClipboard(): Promise<void> {
+    importError = null;
+    let text = "";
+    try {
+      text = (await navigator.clipboard.readText())?.trim() ?? "";
+    } catch {
+      // Clipboard blocked — fall back to manual entry.
+      importMode = "manual";
+      importError = t("import.clipboardFail");
+      return;
+    }
+    if (!text) {
+      importMode = "manual";
+      importError = t("import.clipboardEmpty");
+      return;
+    }
+    subUrl = text;
+    await importSubscription();
   }
 
   function fmtImported(iso: string): string {
@@ -103,7 +133,7 @@
 
 <div class="home">
 <header class="topbar">
-  <button class="icon-btn" onclick={() => (showImport = true)} aria-label="Add subscription">
+  <button class="icon-btn" onclick={openImport} aria-label="Add subscription">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
       <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
     </svg>
@@ -431,22 +461,40 @@
       aria-label="Add subscription"
     >
       <h2>{t("import.title")}</h2>
-      <p class="muted">{t("import.hint")}</p>
-      <input
-        type="url"
-        placeholder="https://… or vless://…"
-        bind:value={subUrl}
-        disabled={subs.importing}
-      />
-      {#if importError}
-        <div class="error">{importError}</div>
+      {#if importMode === "choose"}
+        <p class="muted">{t("import.hint")}</p>
+        <div class="import-choice">
+          <button class="btn btn-primary" onclick={importFromClipboard} disabled={subs.importing}>
+            {subs.importing ? t("import.importing") : t("import.fromClipboard")}
+          </button>
+          <button class="btn" onclick={() => (importMode = "manual")} disabled={subs.importing}>
+            {t("import.manual")}
+          </button>
+        </div>
+        {#if importError}
+          <div class="error">{importError}</div>
+        {/if}
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick={() => (showImport = false)}>{t("common.cancel")}</button>
+        </div>
+      {:else}
+        <p class="muted">{t("import.manualHint")}</p>
+        <textarea
+          class="import-text"
+          placeholder={"vless://…\nhttps://…\n{ \"outbounds\": [ … ] }"}
+          bind:value={subUrl}
+          disabled={subs.importing}
+        ></textarea>
+        {#if importError}
+          <div class="error">{importError}</div>
+        {/if}
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick={() => (showImport = false)}>{t("common.cancel")}</button>
+          <button class="btn btn-primary" onclick={importSubscription} disabled={subs.importing || !subUrl.trim()}>
+            {subs.importing ? t("import.importing") : t("import.add")}
+          </button>
+        </div>
       {/if}
-      <div class="modal-actions">
-        <button class="btn btn-ghost" onclick={() => (showImport = false)}>{t("common.cancel")}</button>
-        <button class="btn btn-primary" onclick={importSubscription} disabled={subs.importing || !subUrl.trim()}>
-          {subs.importing ? t("import.importing") : t("import.add")}
-        </button>
-      </div>
     </div>
   </div>
 {/if}
@@ -951,6 +999,25 @@
     justify-content: flex-end;
     gap: 8px;
     margin-top: 4px;
+  }
+  .import-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 4px 0;
+  }
+  .import-choice .btn {
+    width: 100%;
+    padding: 12px;
+  }
+  .import-text {
+    width: 100%;
+    min-height: 120px;
+    resize: vertical;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre;
   }
   .error {
     color: var(--danger);

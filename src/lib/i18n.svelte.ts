@@ -46,9 +46,14 @@ const EN: Dict = {
 
   // import modal
   "import.title": "Add subscription",
-  "import.hint": "Paste a subscription URL or a single vless:// link.",
+  "import.hint": "From the clipboard, or enter it by hand.",
   "import.importing": "Importing…",
   "import.add": "Add",
+  "import.fromClipboard": "Paste from clipboard",
+  "import.manual": "Enter manually",
+  "import.manualHint": "A subscription URL, a vless:// / vmess:// / trojan:// / ss:// link, or JSON (xray config / outbounds).",
+  "import.clipboardFail": "Couldn't read the clipboard — paste it below.",
+  "import.clipboardEmpty": "The clipboard is empty — paste it below.",
 
   // generic
   "common.close": "Close",
@@ -196,9 +201,14 @@ const RU: Dict = {
   "rename.title": "Переименовать подписку",
 
   "import.title": "Добавить подписку",
-  "import.hint": "Вставьте ссылку на подписку или одиночную vless:// ссылку.",
+  "import.hint": "Из буфера обмена или ввести вручную.",
   "import.importing": "Добавление…",
   "import.add": "Добавить",
+  "import.fromClipboard": "Вставить из буфера",
+  "import.manual": "Ввести вручную",
+  "import.manualHint": "URL подписки, ссылка vless:// / vmess:// / trojan:// / ss:// или JSON (конфиг xray / outbounds).",
+  "import.clipboardFail": "Не удалось прочитать буфер — вставьте ниже.",
+  "import.clipboardEmpty": "Буфер обмена пуст — вставьте ниже.",
 
   "common.close": "Закрыть",
   "common.cancel": "Отмена",

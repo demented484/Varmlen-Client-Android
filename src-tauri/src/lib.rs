@@ -12,8 +12,8 @@ mod xray;
 use std::time::Duration;
 
 use subscription::{
-    decode_maybe_b64, is_supported_uri, parse_body_meta, parse_headers, parse_proxy_uri,
-    parse_subscription, ImportResult, VlessServer,
+    decode_maybe_b64, is_supported_uri, parse_body_meta, parse_headers, parse_json_subscription,
+    parse_proxy_uri, parse_subscription, ImportResult, VlessServer,
 };
 
 #[tauri::command]
@@ -68,7 +68,33 @@ async fn fetch_subscription(url: String) -> Result<ImportResult, String> {
     if trimmed.is_empty() {
         return Err("empty URL".to_string());
     }
+
+    // Pasted JSON: an xray/v2ray config, a single outbound, or an array.
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        let servers = parse_json_subscription(trimmed);
+        if servers.is_empty() {
+            return Err("no servers found in the JSON".to_string());
+        }
+        return Ok(ImportResult {
+            meta: Default::default(),
+            servers,
+            description: None,
+        });
+    }
+
     if is_supported_uri(trimmed) {
+        // One pasted share-link, or several newline/whitespace-separated.
+        if trimmed.lines().filter(|l| is_supported_uri(l.trim())).count() > 1 {
+            let servers = parse_subscription(trimmed);
+            if servers.is_empty() {
+                return Err("no servers found".to_string());
+            }
+            return Ok(ImportResult {
+                meta: Default::default(),
+                servers,
+                description: None,
+            });
+        }
         return parse_proxy_uri(trimmed)
             .map(|s| ImportResult {
                 meta: Default::default(),
