@@ -254,7 +254,7 @@ const RU: Dict = {
   "settings.logLevelSub": "Подробность VPN-лога (xray + tun2socks).",
   "settings.viewLog": "Посмотреть лог",
   "settings.viewLogSub": "Открыть VPN-лог — полезно, если не подключается.",
-  "settings.logEmpty": "(лог пуст — подключись разок, чтобы он заполнился)",
+  "settings.logEmpty": "(лог пуст — заполнится после подключения)",
   "settings.logClear": "Очистить",
   "settings.logRefresh": "Обновить",
   "settings.pingMethod": "Метод пинга",

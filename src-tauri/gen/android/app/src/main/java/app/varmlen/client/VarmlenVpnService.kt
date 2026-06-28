@@ -21,7 +21,6 @@ import java.io.File
 class VarmlenVpnService : VpnService() {
     private var tun: ParcelFileDescriptor? = null
     private var xray: Process? = null
-    private var t2sThread: Thread? = null
 
     companion object {
         const val ACTION_CONNECT = "app.varmlen.client.CONNECT"
@@ -120,7 +119,8 @@ class VarmlenVpnService : VpnService() {
         tun = fd
         log("tun established fd=${fd.fd}")
 
-        // 3) tun2socks: bridge the tun fd to xray's SOCKS inbound (blocking → thread).
+        // 3) tun2socks: bridge the tun fd to xray's SOCKS inbound. The JNI runs
+        //    hev on a native pthread and returns immediately.
         val yaml = """
             tunnel:
               mtu: $MTU
@@ -130,20 +130,13 @@ class VarmlenVpnService : VpnService() {
               port: $socksPort
               udp: 'udp'
             misc:
-              task-stack-size: 20480
               tcp-read-write-timeout: 300000
               udp-read-write-timeout: 60000
               log-level: $logLevel
         """.trimIndent()
-        t2sThread = Thread {
-            try {
-                log("tun2socks starting")
-                val r = TProxy.startTun2socks(yaml, fd.fd)
-                log("tun2socks exited rc=$r")
-            } catch (e: Throwable) {
-                log("tun2socks crashed", e)
-            }
-        }.apply { isDaemon = true; start() }
+        val hevFile = File(filesDir, "hev.yaml").apply { writeText(yaml) }
+        log("tun2socks starting (native)")
+        TProxy.startTun2socks(hevFile.absolutePath, fd.fd)
 
         running = true
         log("connected")
@@ -152,7 +145,6 @@ class VarmlenVpnService : VpnService() {
     private fun stopAll() {
         running = false
         try { TProxy.stopTun2socks() } catch (_: Throwable) {}
-        t2sThread = null
         try { xray?.destroy() } catch (_: Throwable) {}
         xray = null
         try { tun?.close() } catch (_: Throwable) {}

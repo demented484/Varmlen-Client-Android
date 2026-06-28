@@ -1,19 +1,39 @@
 // JNI shim around hev-socks5-tunnel: bridges the VpnService tun fd to xray's
-// local SOCKS inbound. `startTun2socks` blocks until `stopTun2socks` is called,
-// so Kotlin runs it on a dedicated thread.
+// local SOCKS inbound. hev's main blocks, so we run it on a dedicated NATIVE
+// pthread (not a JVM thread — running hev's task system on a JVM-managed thread
+// crashes) and return immediately, matching how v2rayNG drives it.
 #include <jni.h>
+#include <pthread.h>
+#include <stdlib.h>
 #include <string.h>
 #include "hev-socks5-tunnel.h"
 
-JNIEXPORT jint JNICALL
+typedef struct {
+    char *path;
+    int fd;
+} args_t;
+
+static void *run_tunnel(void *p) {
+    args_t *a = (args_t *) p;
+    hev_socks5_tunnel_main_from_file(a->path, a->fd);
+    free(a->path);
+    free(a);
+    return NULL;
+}
+
+JNIEXPORT void JNICALL
 Java_app_varmlen_client_TProxy_startTun2socks(JNIEnv *env, jclass clazz,
-                                              jstring config, jint fd) {
+                                              jstring configPath, jint fd) {
     (void) clazz;
-    const char *cfg = (*env)->GetStringUTFChars(env, config, NULL);
-    int ret = hev_socks5_tunnel_main_from_str((const unsigned char *) cfg,
-                                              (unsigned int) strlen(cfg), fd);
-    (*env)->ReleaseStringUTFChars(env, config, cfg);
-    return ret;
+    const char *p = (*env)->GetStringUTFChars(env, configPath, NULL);
+    args_t *a = (args_t *) malloc(sizeof(args_t));
+    a->path = strdup(p);
+    a->fd = fd;
+    (*env)->ReleaseStringUTFChars(env, configPath, p);
+
+    pthread_t t;
+    pthread_create(&t, NULL, run_tunnel, a);
+    pthread_detach(t);
 }
 
 JNIEXPORT void JNICALL

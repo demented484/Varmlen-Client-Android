@@ -157,6 +157,8 @@ a {
 .is-android .page,
 .is-android .scroll {
   top: calc(var(--sat) + 46px) !important;
+  /* Extra bottom room so the last item clears the tab bar + gesture nav. */
+  padding-bottom: calc(28px + env(safe-area-inset-bottom)) !important;
 }
 
 /* ---------- common ---------- */

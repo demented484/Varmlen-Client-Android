@@ -292,6 +292,8 @@
           <span class="slider"></span>
         </span>
       </label>
+      <!-- Tray / window / autostart are desktop concepts; hide on Android. -->
+      {#if !isAndroid}
       <label class="row">
         <div class="row-text">
           <div class="row-title">{t("settings.closeToTray")}</div>
@@ -335,6 +337,7 @@
           <span class="slider"></span>
         </span>
       </label>
+      {/if}
       <div class="row">
         <div class="row-text">
           <div class="row-title">{t("settings.pingMethod")}</div>
