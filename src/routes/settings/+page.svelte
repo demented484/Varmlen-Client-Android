@@ -3,7 +3,7 @@
   import { settings, type VpnMode, type PingMethod, type LogLevel } from "$lib/settings.svelte";
   import { i18n, t, LANGUAGES, type Lang } from "$lib/i18n.svelte";
   import { core } from "$lib/core.svelte";
-  import { capsGranted, grantCaps, autostartStatus, setAutostart, vpnLog, clearVpnLog } from "$lib/api";
+  import { capsGranted, grantCaps, autostartStatus, setAutostart, vpnLog, clearVpnLog, notificationsEnabled, openNotificationSettings } from "$lib/api";
   import Dropdown from "$lib/components/Dropdown.svelte";
   import { onMount, tick } from "svelte";
   import { isAndroid } from "$lib/platform";
@@ -99,6 +99,21 @@
     } catch (e) {
       console.error("autostart status:", e);
     }
+  });
+
+  // Notification permission state (Android), re-checked when returning from the
+  // system settings the user was sent to.
+  let notifOn = $state(true);
+  async function refreshNotif() {
+    if (isAndroid) {
+      try { notifOn = await notificationsEnabled(); } catch {}
+    }
+  }
+  onMount(() => {
+    refreshNotif();
+    const onVis = () => { if (document.visibilityState === "visible") refreshNotif(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   });
   async function toggleAutostart(on: boolean) {
     autostart = on;
@@ -555,6 +570,19 @@
   <section>
     <h2>{t("settings.diagnostics")}</h2>
     <div class="list">
+      {#if isAndroid}
+        <button type="button" class="row log-row" onclick={() => openNotificationSettings()}>
+          <div class="row-text">
+            <div class="row-title">{t("settings.notifications")}</div>
+            <div class="row-sub muted">
+              {notifOn ? t("settings.notificationsOn") : t("settings.notificationsOff")}
+            </div>
+          </div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      {/if}
       <div class="row">
         <div class="row-text">
           <div class="row-title">{t("settings.logLevel")}</div>

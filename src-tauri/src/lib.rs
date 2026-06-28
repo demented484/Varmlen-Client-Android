@@ -267,6 +267,8 @@ pub fn run() {
             vpn::clear_vpn_log,
             vpn::read_clipboard,
             vpn::set_status_bar,
+            vpn::notifications_enabled,
+            vpn::open_notification_settings,
             tray::set_tray_status,
             tray::set_close_to_tray,
             tray::set_autostart,

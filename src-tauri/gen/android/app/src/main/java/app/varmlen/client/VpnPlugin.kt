@@ -126,6 +126,35 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve()
     }
 
+    @Command
+    fun notificationsEnabled(invoke: Invoke) {
+        val ret = JSObject()
+        val on = try {
+            androidx.core.app.NotificationManagerCompat.from(activity).areNotificationsEnabled()
+        } catch (_: Throwable) { true }
+        ret.put("enabled", on)
+        invoke.resolve(ret)
+    }
+
+    @Command
+    fun openNotificationSettings(invoke: Invoke) {
+        try {
+            val i = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, activity.packageName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            activity.startActivity(i)
+        } catch (_: Throwable) {
+            try {
+                activity.startActivity(
+                    Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        .setData(android.net.Uri.parse("package:" + activity.packageName))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (_: Throwable) {}
+        }
+        invoke.resolve()
+    }
+
     /** Paths the Rust side needs to run xray for a proxy ping: the bundled
      *  binary (in nativeLibraryDir) and a writable config dir (filesDir). */
     @Command
@@ -139,22 +168,29 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
     /** Launchable apps (the ones a user recognises), for the split-tunnel picker. */
     @Command
     fun listApps(invoke: Invoke) {
-        val pm = activity.packageManager
-        val main = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
-        val arr = JSArray()
-        val seen = HashSet<String>()
-        for (ri in pm.queryIntentActivities(main, 0)) {
-            val pkg = ri.activityInfo?.packageName ?: continue
-            if (pkg == activity.packageName || !seen.add(pkg)) continue
-            val o = JSObject()
-            o.put("id", pkg)
-            o.put("name", ri.loadLabel(pm).toString())
-            o.put("icon", try { iconDataUri(ri.loadIcon(pm)) } catch (_: Throwable) { null })
-            arr.put(o)
-        }
-        val ret = JSObject()
-        ret.put("apps", arr)
-        invoke.resolve(ret)
+        // Heavy (PackageManager query + icon rasterisation). Run off the main
+        // thread so the picker modal can paint immediately instead of freezing
+        // until the scan finishes.
+        Thread {
+            val pm = activity.packageManager
+            val main = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+            val arr = JSArray()
+            val seen = HashSet<String>()
+            try {
+                for (ri in pm.queryIntentActivities(main, 0)) {
+                    val pkg = ri.activityInfo?.packageName ?: continue
+                    if (pkg == activity.packageName || !seen.add(pkg)) continue
+                    val o = JSObject()
+                    o.put("id", pkg)
+                    o.put("name", ri.loadLabel(pm).toString())
+                    o.put("icon", try { iconDataUri(ri.loadIcon(pm)) } catch (_: Throwable) { null })
+                    arr.put(o)
+                }
+            } catch (_: Throwable) {}
+            val ret = JSObject()
+            ret.put("apps", arr)
+            invoke.resolve(ret)
+        }.apply { isDaemon = true; start() }
     }
 
     /** Rasterise an app icon to a small PNG data URI for the picker. */

@@ -138,6 +138,29 @@ pub fn set_bar_style<R: Runtime>(app: &AppHandle<R>, light: bool) -> Result<(), 
         .map_err(|e| e.to_string())
 }
 
+#[derive(serde::Deserialize)]
+struct NotifResp {
+    enabled: bool,
+}
+
+/// Whether the app may post notifications (the VPN status notice).
+pub fn notifications_enabled<R: Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
+    let vpn = app.state::<Vpn<R>>();
+    vpn.0
+        .run_mobile_plugin::<NotifResp>("notificationsEnabled", ())
+        .map(|r| r.enabled)
+        .map_err(|e| e.to_string())
+}
+
+/// Open the system notification settings for this app (to grant after a decline).
+pub fn open_notification_settings<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let vpn = app.state::<Vpn<R>>();
+    vpn.0
+        .run_mobile_plugin::<serde_json::Value>("openNotificationSettings", ())
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 pub fn disconnect<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let vpn = app.state::<Vpn<R>>();
     vpn.0

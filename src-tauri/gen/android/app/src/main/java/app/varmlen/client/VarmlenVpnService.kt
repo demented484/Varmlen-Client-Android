@@ -9,6 +9,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import java.io.File
 
@@ -21,6 +23,19 @@ import java.io.File
 class VarmlenVpnService : VpnService() {
     private var tun: ParcelFileDescriptor? = null
     private var xray: Process? = null
+
+    // Live notification (speed + uptime), refreshed once a second.
+    private val notifHandler = Handler(Looper.getMainLooper())
+    private var connectedAt = 0L
+    private var lastTx = 0L
+    private var lastRx = 0L
+    private var lastStatsAt = 0L
+    private val statsTick = object : Runnable {
+        override fun run() {
+            updateNotification()
+            notifHandler.postDelayed(this, 1000)
+        }
+    }
 
     companion object {
         const val ACTION_CONNECT = "app.varmlen.client.CONNECT"
@@ -215,11 +230,17 @@ class VarmlenVpnService : VpnService() {
         TProxyService.TProxyStartService(hevFile.absolutePath, fd.fd)
 
         setWant(this, true)
+        // Start the per-second speed + uptime notification updates.
+        connectedAt = System.currentTimeMillis()
+        lastTx = 0L; lastRx = 0L; lastStatsAt = 0L
+        notifHandler.removeCallbacks(statsTick)
+        notifHandler.post(statsTick)
         log("connected")
     }
 
     /** Stop hev + xray + the tun, but leave the service running (used to restart). */
     private fun teardown() {
+        notifHandler.removeCallbacks(statsTick)
         try { TProxyService.TProxyStopService() } catch (_: Throwable) {}
         try { xray?.destroy() } catch (_: Throwable) {}
         xray = null
@@ -251,31 +272,14 @@ class VarmlenVpnService : VpnService() {
         try {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // MIN: the foreground-service notice is required by Android to keep
-                // the service alive, but kept as unobtrusive as possible (no status
-                // icon / sound). With POST_NOTIFICATIONS not granted it's hidden
-                // entirely while the service stays foreground.
+                // LOW: visible (so the user sees the live speed + uptime) but no
+                // sound. If POST_NOTIFICATIONS isn't granted the system hides it
+                // while the service still stays foreground.
                 nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL, "VPN", NotificationManager.IMPORTANCE_MIN)
+                    NotificationChannel(CHANNEL, "VPN", NotificationManager.IMPORTANCE_LOW)
                 )
             }
-            val open = PendingIntent.getActivity(
-                this, 0, Intent(this, MainActivity::class.java),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-            val stopIntent = PendingIntent.getService(
-                this, 1,
-                Intent(this, VarmlenVpnService::class.java).setAction(ACTION_DISCONNECT),
-                PendingIntent.FLAG_IMMUTABLE
-            )
-            val notif: Notification = Notification.Builder(this, CHANNEL)
-                .setContentTitle("Varmlen")
-                .setContentText("VPN active")
-                .setSmallIcon(R.drawable.ic_tile)
-                .setContentIntent(open)
-                .addAction(Notification.Action.Builder(null, "Disconnect", stopIntent).build())
-                .setOngoing(true)
-                .build()
+            val notif = buildNotif("Connecting…")
             if (Build.VERSION.SDK_INT >= 34) {
                 startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             } else {
@@ -284,5 +288,67 @@ class VarmlenVpnService : VpnService() {
         } catch (e: Throwable) {
             log("startForeground failed (continuing)", e)
         }
+    }
+
+    private fun buildNotif(text: String): Notification {
+        val open = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val stopIntent = PendingIntent.getService(
+            this, 1,
+            Intent(this, VarmlenVpnService::class.java).setAction(ACTION_DISCONNECT),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        return Notification.Builder(this, CHANNEL)
+            .setContentTitle("Varmlen")
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_tile)
+            .setContentIntent(open)
+            .addAction(Notification.Action.Builder(null, "Disconnect", stopIntent).build())
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+    }
+
+    /** Refresh the notification with the current up/down speed and uptime. */
+    private fun updateNotification() {
+        val now = System.currentTimeMillis()
+        var up = 0L
+        var down = 0L
+        val stats = try { TProxyService.TProxyGetStats() } catch (_: Throwable) { null }
+        if (stats != null && stats.size >= 4) {
+            val tx = stats[1]
+            val rx = stats[3]
+            if (lastStatsAt > 0) {
+                val dt = (now - lastStatsAt).coerceAtLeast(1)
+                up = (tx - lastTx) * 1000 / dt
+                down = (rx - lastRx) * 1000 / dt
+            }
+            lastTx = tx; lastRx = rx; lastStatsAt = now
+        }
+        val uptime = if (connectedAt > 0) (now - connectedAt) / 1000 else 0
+        val text = "↑ ${speed(up)}   ↓ ${speed(down)}   ${duration(uptime)}"
+        try {
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .notify(NOTIF_ID, buildNotif(text))
+        } catch (_: Throwable) {}
+    }
+
+    private fun speed(bps: Long): String {
+        val b = bps.coerceAtLeast(0)
+        return when {
+            b < 1024 -> "$b B/s"
+            b < 1024 * 1024 -> "${b / 1024} KB/s"
+            else -> String.format("%.1f MB/s", b / 1048576.0)
+        }
+    }
+
+    private fun duration(sec: Long): String {
+        val h = sec / 3600
+        val m = (sec % 3600) / 60
+        val s = sec % 60
+        return if (h > 0) String.format("%d:%02d:%02d", h, m, s)
+        else String.format("%02d:%02d", m, s)
     }
 }

@@ -729,6 +729,34 @@ pub async fn set_status_bar(app: tauri::AppHandle, light: bool) -> Result<(), St
     }
 }
 
+/// Whether the app may post notifications (Android). Always true on desktop.
+#[tauri::command]
+pub async fn notifications_enabled(app: tauri::AppHandle) -> bool {
+    #[cfg(target_os = "android")]
+    {
+        return crate::mobile_vpn::notifications_enabled(&app).unwrap_or(false);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = &app;
+        true
+    }
+}
+
+/// Open the system notification settings for this app (Android). No-op on desktop.
+#[tauri::command]
+pub async fn open_notification_settings(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        return crate::mobile_vpn::open_notification_settings(&app);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = &app;
+        Ok(())
+    }
+}
+
 /// Whether the cores have the capabilities they need (replaces the old
 /// "helper installed" check).
 #[tauri::command]

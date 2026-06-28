@@ -203,6 +203,16 @@ export function setStatusBar(light: boolean): Promise<void> {
   return invoke<void>("set_status_bar", { light });
 }
 
+/** Whether the app may post notifications (Android). */
+export function notificationsEnabled(): Promise<boolean> {
+  return invoke<boolean>("notifications_enabled");
+}
+
+/** Open the system notification settings for this app (Android). */
+export function openNotificationSettings(): Promise<void> {
+  return invoke<void>("open_notification_settings");
+}
+
 export function clearVpnLog(): Promise<void> {
   return invoke<void>("clear_vpn_log");
 }
