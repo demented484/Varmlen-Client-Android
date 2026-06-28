@@ -67,6 +67,15 @@
     return () => document.removeEventListener("visibilitychange", onVis);
   });
 
+  // While connected, poll the real state so disconnecting from the notification
+  // / tile (or a system revoke) reflects in the UI even with the app open.
+  onMount(() => {
+    const id = setInterval(() => {
+      if (conn.status === "connected") void conn.refresh();
+    }, 3000);
+    return () => clearInterval(id);
+  });
+
   // Auto-refresh subscriptions on their server-advertised interval (the UI
   // shows "auto-update Nh"); checks on launch and periodically thereafter.
   onMount(() => subs.startAutoRefresh());

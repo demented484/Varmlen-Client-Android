@@ -515,6 +515,11 @@
     border-radius: 0;
     text-align: left;
     color: var(--text);
+    /* Only render rows near the viewport: the full installed-apps list (with an
+       icon each) otherwise jank-renders at once and the WebView drops off-screen
+       icons while scrolling. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 52px;
   }
   .picker-row + .picker-row {
     border-top: 1px solid var(--border);

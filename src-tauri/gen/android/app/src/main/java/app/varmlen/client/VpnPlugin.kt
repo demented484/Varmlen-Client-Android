@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.net.VpnService
+import android.os.Build
 import android.util.Base64
 import java.io.ByteArrayOutputStream
 import androidx.activity.result.ActivityResult
@@ -196,7 +197,10 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
     /** Rasterise an app icon to a small PNG data URI for the picker. */
     private fun iconDataUri(d: Drawable?): String? {
         if (d == null) return null
-        val size = 96
+        // Small WEBP keeps the DOM light: a few hundred app icons as 96px PNGs
+        // exhaust the WebView's image memory and start dropping off-screen ones
+        // while scrolling. 64px lossy WEBP is ~5x smaller.
+        val size = 64
         val bmp = if (d is BitmapDrawable && d.bitmap != null) {
             Bitmap.createScaledBitmap(d.bitmap, size, size, true)
         } else {
@@ -207,8 +211,10 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
             b
         }
         val out = ByteArrayOutputStream()
-        bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
-        return "data:image/png;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+        val fmt = if (Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY
+        else @Suppress("DEPRECATION") Bitmap.CompressFormat.WEBP
+        bmp.compress(fmt, 80, out)
+        return "data:image/webp;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
 
     private fun startVpn(args: ConnectArgs) {

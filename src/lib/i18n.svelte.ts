@@ -15,7 +15,7 @@ const EN: Dict = {
   "status.disconnected": "Not connected",
   "status.connecting": "Connecting",
   "status.connected": "Connected",
-  "status.dropped": "VPN dropped — traffic blocked",
+  "status.dropped": "VPN dropped - traffic blocked",
   "conn.selectLocation": "Select a location first",
   "conn.dropped": "Connection lost. The kill switch is blocking all traffic. Reconnect, or allow traffic below.",
   "conn.droppedNoKill": "Connection lost.",
@@ -52,8 +52,8 @@ const EN: Dict = {
   "import.fromClipboard": "Paste from clipboard",
   "import.manual": "Enter manually",
   "import.manualHint": "A subscription URL, a vless:// / vmess:// / trojan:// / ss:// link, or JSON (xray config / outbounds).",
-  "import.clipboardFail": "Couldn't read the clipboard — paste it below.",
-  "import.clipboardEmpty": "The clipboard is empty — paste it below.",
+  "import.clipboardFail": "Couldn't read the clipboard - paste it below.",
+  "import.clipboardEmpty": "The clipboard is empty - paste it below.",
 
   // generic
   "common.close": "Close",
@@ -107,6 +107,7 @@ const EN: Dict = {
   "settings.autostartSub": "Start Varmlen automatically when you sign in.",
   "settings.autostartMinimized": "Start minimized",
   "settings.autostartMinimizedSub": "Launch straight to the tray, without a window.",
+  "settings.permissions": "Permissions",
   "settings.diagnostics": "Diagnostics",
   "settings.notifications": "Notifications",
   "settings.notificationsOn": "Enabled. Shows speed and uptime while connected.",
@@ -114,8 +115,8 @@ const EN: Dict = {
   "settings.logLevel": "Log level",
   "settings.logLevelSub": "Verbosity of the VPN log (xray + tun2socks).",
   "settings.viewLog": "View log",
-  "settings.viewLogSub": "Open the VPN log — useful when a connection fails.",
-  "settings.logEmpty": "(log is empty — connect once to populate it)",
+  "settings.viewLogSub": "Open the VPN log - useful when a connection fails.",
+  "settings.logEmpty": "(log is empty - connect once to populate it)",
   "settings.logClear": "Clear",
   "settings.logRefresh": "Refresh",
   "settings.pingMethod": "Ping method",
@@ -130,7 +131,7 @@ const EN: Dict = {
   "mode.tun": "TUN (system-wide)",
   "mode.proxy": "Proxy (SOCKS/HTTP)",
   "mode.tunSub": "Routes every app. Needs network permissions.",
-  "mode.proxySub": "Local proxy at 127.0.0.1:2081 — no root. Point your apps/system at it.",
+  "mode.proxySub": "Local proxy at 127.0.0.1:2081 - no root. Point your apps/system at it.",
 
   // VPN core (xray)
   "settings.core": "VPN core",
@@ -162,7 +163,7 @@ const EN: Dict = {
   "settings.helper": "Network permissions",
   "helper.title": "Network permissions",
   "helper.ready": "Granted",
-  "helper.notInstalled": "Not granted — required for TUN mode",
+  "helper.notInstalled": "Not granted - required for TUN mode",
   "helper.checking": "Checking…",
   "helper.install": "Grant",
   "helper.reinstall": "Re-grant",
@@ -177,7 +178,7 @@ const RU: Dict = {
   "status.disconnected": "Не подключено",
   "status.connecting": "Подключение",
   "status.connected": "Подключено",
-  "status.dropped": "VPN отвалился — трафик заблокирован",
+  "status.dropped": "VPN отвалился - трафик заблокирован",
   "conn.selectLocation": "Сначала выберите локацию",
   "conn.dropped": "Соединение потеряно. Kill switch блокирует весь трафик. Переподключитесь или разрешите трафик ниже.",
   "conn.droppedNoKill": "Соединение потеряно.",
@@ -210,8 +211,8 @@ const RU: Dict = {
   "import.fromClipboard": "Вставить из буфера",
   "import.manual": "Ввести вручную",
   "import.manualHint": "URL подписки, ссылка vless:// / vmess:// / trojan:// / ss:// или JSON (конфиг xray / outbounds).",
-  "import.clipboardFail": "Не удалось прочитать буфер — вставьте ниже.",
-  "import.clipboardEmpty": "Буфер обмена пуст — вставьте ниже.",
+  "import.clipboardFail": "Не удалось прочитать буфер - вставьте ниже.",
+  "import.clipboardEmpty": "Буфер обмена пуст - вставьте ниже.",
 
   "common.close": "Закрыть",
   "common.cancel": "Отмена",
@@ -224,7 +225,7 @@ const RU: Dict = {
   "split.modeGeneral": "Общий",
   "split.modeSelective": "Выборочный",
   "split.active": "активно: {n}",
-  "split.mode.selective": "VPN работает только для записей из этого списка. Остальное — напрямую.",
+  "split.mode.selective": "VPN работает только для записей из этого списка. Остальное - напрямую.",
   "split.mode.general": "VPN работает для всего, кроме записей из этого списка (они идут напрямую).",
   "split.searchApps": "Поиск приложений",
   "split.noAppsTitle": "Пока нет приложений",
@@ -257,11 +258,12 @@ const RU: Dict = {
   "settings.allowLan": "Разрешить локальную сеть",
   "settings.allowLanSub": "Оставить доступными принтеры, NAS и локальные устройства.",
   "settings.closeToTray": "Закрывать в трей",
-  "settings.closeToTraySub": "Крестик сворачивает Varmlen в трей; выкл — полный выход.",
+  "settings.closeToTraySub": "Крестик сворачивает Varmlen в трей; выкл - полный выход.",
   "settings.autostart": "Запуск при входе",
   "settings.autostartSub": "Запускать Varmlen автоматически при входе в систему.",
   "settings.autostartMinimized": "Запускать свёрнутым",
   "settings.autostartMinimizedSub": "Запуск сразу в трей, без окна.",
+  "settings.permissions": "Разрешения",
   "settings.diagnostics": "Диагностика",
   "settings.notifications": "Уведомления",
   "settings.notificationsOn": "Включены. Показывают скорость и время подключения.",
@@ -269,8 +271,8 @@ const RU: Dict = {
   "settings.logLevel": "Уровень логов",
   "settings.logLevelSub": "Подробность VPN-лога (xray + tun2socks).",
   "settings.viewLog": "Посмотреть лог",
-  "settings.viewLogSub": "Открыть VPN-лог — полезно, если не подключается.",
-  "settings.logEmpty": "(лог пуст — заполнится после подключения)",
+  "settings.viewLogSub": "Открыть VPN-лог - полезно, если не подключается.",
+  "settings.logEmpty": "(лог пуст - заполнится после подключения)",
   "settings.logClear": "Очистить",
   "settings.logRefresh": "Обновить",
   "settings.pingMethod": "Метод пинга",
@@ -284,7 +286,7 @@ const RU: Dict = {
   "mode.tun": "TUN (всё устройство)",
   "mode.proxy": "Прокси (SOCKS/HTTP)",
   "mode.tunSub": "Весь трафик системы. Нужны сетевые права.",
-  "mode.proxySub": "Локальный прокси 127.0.0.1:2081 — без root. Укажи его в приложениях/системе.",
+  "mode.proxySub": "Локальный прокси 127.0.0.1:2081 - без root. Укажи его в приложениях/системе.",
 
   "settings.core": "Ядро VPN",
   "core.checking": "Проверка обновлений…",
@@ -314,7 +316,7 @@ const RU: Dict = {
   "settings.helper": "Сетевые права",
   "helper.title": "Сетевые права",
   "helper.ready": "Выданы",
-  "helper.notInstalled": "Не выданы — нужны для режима TUN",
+  "helper.notInstalled": "Не выданы - нужны для режима TUN",
   "helper.checking": "Проверка…",
   "helper.install": "Выдать",
   "helper.reinstall": "Выдать заново",
@@ -353,7 +355,7 @@ class I18n {
 
 export const i18n = new I18n();
 
-/** Reactive translate helper — reads i18n.lang, so templates update on change. */
+/** Reactive translate helper - reads i18n.lang, so templates update on change. */
 export function t(key: string, vars?: Record<string, string | number>): string {
   return i18n.t(key, vars);
 }

@@ -567,22 +567,28 @@
     </div>
   {/if}
 
+  {#if isAndroid}
+  <section>
+    <h2>{t("settings.permissions")}</h2>
+    <div class="list">
+      <button type="button" class="row log-row" onclick={() => openNotificationSettings()}>
+        <div class="row-text">
+          <div class="row-title">{t("settings.notifications")}</div>
+          <div class="row-sub muted">
+            {notifOn ? t("settings.notificationsOn") : t("settings.notificationsOff")}
+          </div>
+        </div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </div>
+  </section>
+  {/if}
+
   <section>
     <h2>{t("settings.diagnostics")}</h2>
     <div class="list">
-      {#if isAndroid}
-        <button type="button" class="row log-row" onclick={() => openNotificationSettings()}>
-          <div class="row-text">
-            <div class="row-title">{t("settings.notifications")}</div>
-            <div class="row-sub muted">
-              {notifOn ? t("settings.notificationsOn") : t("settings.notificationsOff")}
-            </div>
-          </div>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-      {/if}
       <div class="row">
         <div class="row-text">
           <div class="row-title">{t("settings.logLevel")}</div>
@@ -705,6 +711,8 @@
     border: none;
     cursor: pointer;
     color: var(--text);
+    /* <button> defaults to centered text; match the other (div) rows. */
+    text-align: left;
   }
   .log-modal {
     width: min(560px, 94vw);
