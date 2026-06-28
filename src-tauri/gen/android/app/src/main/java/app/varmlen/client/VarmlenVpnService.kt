@@ -235,8 +235,12 @@ class VarmlenVpnService : VpnService() {
         try {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // MIN: the foreground-service notice is required by Android to keep
+                // the service alive, but kept as unobtrusive as possible (no status
+                // icon / sound). With POST_NOTIFICATIONS not granted it's hidden
+                // entirely while the service stays foreground.
                 nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL, "VPN", NotificationManager.IMPORTANCE_LOW)
+                    NotificationChannel(CHANNEL, "VPN", NotificationManager.IMPORTANCE_MIN)
                 )
             }
             val open = PendingIntent.getActivity(
