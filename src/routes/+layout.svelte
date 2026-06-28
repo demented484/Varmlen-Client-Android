@@ -11,7 +11,6 @@
   import { settings } from "$lib/settings.svelte";
   import { readLegacyStorage, setTrayStatus, setCloseToTray, setStatusBar } from "$lib/api";
   import { listen } from "@tauri-apps/api/event";
-  import { addPluginListener } from "@tauri-apps/api/core";
   import { theme } from "$lib/theme.svelte";
   import { isAndroid } from "$lib/platform";
 
@@ -68,25 +67,20 @@
     return () => document.removeEventListener("visibilitychange", onVis);
   });
 
-  // Android: the VpnService pushes a state event on connect / disconnect (incl.
-  // from the notification, tile, system revoke, or an xray crash). Apply it
-  // instantly — no polling lag.
+  // A native (Rust) watcher emits a global `vpn-running` event the instant the
+  // tunnel goes up or down — including a disconnect from the notification, the
+  // tile, a system revoke, or a crashed core. Global events ride core:event
+  // (granted) and aren't throttled like JS timers, so this is the instant path.
   onMount(() => {
-    if (!isAndroid) return;
-    let handle: { unregister: () => void } | undefined;
-    addPluginListener("varmlenvpn", "vpnState", (e: { running: boolean }) => {
-      conn.applyExternalState(e.running);
-    })
-      .then((h) => (handle = h))
-      .catch(() => {});
-    return () => handle?.unregister();
+    const un = listen<boolean>("vpn-running", (e) => conn.applyExternalState(e.payload));
+    return () => void un.then((f) => f());
   });
 
-  // Fallback poll in case a state event is missed, while connected.
+  // Backstop only, in case an event is ever missed across process churn.
   onMount(() => {
     const id = setInterval(() => {
       if (conn.status === "connected") void conn.refresh();
-    }, 500);
+    }, 2000);
     return () => clearInterval(id);
   });
 

@@ -5,7 +5,7 @@
 
 use serde::Serialize;
 use tauri::plugin::{Builder, PluginHandle, TauriPlugin};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,9 +27,37 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .setup(|app, api| {
             let handle = api.register_android_plugin("app.varmlen.client", "VpnPlugin")?;
             app.manage(Vpn(handle));
+            start_state_watcher(app.clone());
             Ok(())
         })
         .build()
+}
+
+/// Watch the (cheap, want-flag-backed) running state on a NATIVE thread and emit
+/// a global `vpn-running` event the instant it flips. Why this and not the
+/// Kotlin plugin's `trigger`:
+///   - A native thread isn't throttled like the WebView's JS timers when the app
+///     is backgrounded (the notification shade is open), so a disconnect there is
+///     still caught promptly.
+///   - A GLOBAL event (`app.emit`) goes through `core:event`, which the default
+///     capability already grants — unlike a plugin `trigger`, whose
+///     `registerListener` command is ACL-gated and silently denied for this
+///     inline plugin (no permission manifest exists for it).
+/// Polls fast while connected (catch a drop), slow while idle (catch a tile/boot
+/// connect cheaply). User-initiated connect/disconnect update the UI directly.
+fn start_state_watcher<R: Runtime>(app: AppHandle<R>) {
+    std::thread::spawn(move || {
+        let mut last: Option<bool> = None;
+        loop {
+            let running = is_running(&app);
+            if last != Some(running) {
+                last = Some(running);
+                let _ = app.emit("vpn-running", running);
+            }
+            let next = if running { 200 } else { 1000 };
+            std::thread::sleep(std::time::Duration::from_millis(next));
+        }
+    });
 }
 
 /// Start the VPN: hand the generated xray config + per-app split to the service.

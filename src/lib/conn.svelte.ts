@@ -187,6 +187,9 @@ class ConnStore {
    *  instantly, no status round-trip. "connecting" is left for connect() to
    *  resolve. */
   applyExternalState(running: boolean): void {
+    // connect() owns the connecting -> connected/disconnected transition (incl.
+    // the minimum spinner time); don't let a watcher tick race it.
+    if (this.status === "connecting") return;
     if (running) {
       this.status = "connected";
       this.lastConnectedAt = Date.now();
