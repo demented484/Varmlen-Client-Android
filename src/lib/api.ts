@@ -30,6 +30,9 @@ export interface SubscriptionMeta {
   download_bytes: number | null;
   total_bytes: number | null;
   expires_at_unix: number | null;
+  /** True when a Subscription-Userinfo header was present — then its values
+   *  (including absent ones = "no quota / no expiry") are authoritative. */
+  has_userinfo: boolean;
   support_url: string | null;
   web_page_url: string | null;
 }

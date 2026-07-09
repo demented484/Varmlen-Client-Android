@@ -134,10 +134,17 @@ pub struct SubscriptionMeta {
     pub upload_bytes: Option<u64>,
     /// `Subscription-Userinfo`: download bytes used.
     pub download_bytes: Option<u64>,
-    /// `Subscription-Userinfo`: total quota in bytes. 0 means unlimited.
+    /// `Subscription-Userinfo`: total quota in bytes. 0/absent means unlimited
+    /// (normalized to None).
     pub total_bytes: Option<u64>,
-    /// `Subscription-Userinfo`: expiry as unix seconds.
+    /// `Subscription-Userinfo`: expiry as unix seconds. 0/absent means never
+    /// (normalized to None).
     pub expires_at_unix: Option<i64>,
+    /// Whether a `Subscription-Userinfo` header was present at all. When true,
+    /// the header is AUTHORITATIVE: an absent key means "no quota / no expiry"
+    /// and stored values must be cleared, not kept. When false (panel doesn't
+    /// send userinfo), the client keeps what it knew.
+    pub has_userinfo: bool,
     /// `Support-Url` — a human support contact (channel / chat).
     pub support_url: Option<String>,
     /// `Profile-Web-Page-Url` — the provider's bot / web page.
@@ -826,6 +833,7 @@ where
         .filter(|s| !s.is_empty());
 
     if let Some(info) = get("subscription-userinfo") {
+        meta.has_userinfo = true;
         for kv in info.split(';') {
             let kv = kv.trim();
             if let Some((k, v)) = kv.split_once('=') {
@@ -833,8 +841,10 @@ where
                 match k.trim() {
                     "upload"   => meta.upload_bytes   = v.parse().ok(),
                     "download" => meta.download_bytes = v.parse().ok(),
-                    "total"    => meta.total_bytes    = v.parse().ok(),
-                    "expire"   => meta.expires_at_unix = v.parse().ok(),
+                    // 0 = unlimited / never expires -> None, so the UI hides
+                    // the badge instead of showing "0 B" or 01.01.1970.
+                    "total"    => meta.total_bytes    = v.parse().ok().filter(|&x| x > 0),
+                    "expire"   => meta.expires_at_unix = v.parse().ok().filter(|&x| x > 0),
                     _ => {}
                 }
             }
@@ -917,9 +927,10 @@ mod tests {
 
         // And the inline userinfo parses into meta via the same path headers do.
         let m = parse_headers(|name| headers.get(name).cloned());
-        assert_eq!(m.total_bytes, Some(0));
+        assert_eq!(m.total_bytes, None); // total=0 -> unlimited
         assert_eq!(m.upload_bytes, Some(10));
         assert_eq!(m.expires_at_unix, Some(1780236569));
+        assert!(m.has_userinfo);
     }
 
     #[test]
@@ -1005,6 +1016,7 @@ mod tests {
         assert_eq!(m.total_bytes, Some(1_099_511_627_776));
         assert_eq!(m.expires_at_unix, Some(1_781_461_695));
         assert_eq!(m.support_url.as_deref(), Some("https://t.me/x_bot"));
+        assert!(m.has_userinfo);
     }
 
     #[test]
@@ -1012,6 +1024,28 @@ mod tests {
         let m = parse_headers(|_| None);
         assert!(m.title.is_none());
         assert!(m.total_bytes.is_none());
+        // No userinfo header at all: the client must KEEP its stored values.
+        assert!(!m.has_userinfo);
+    }
+
+    #[test]
+    fn userinfo_zero_or_absent_expiry_means_never() {
+        // expire=0 -> never expires; the UI must not show 01.01.1970.
+        let m = parse_headers(|name| match name {
+            "subscription-userinfo" => Some("upload=1; download=2; total=0; expire=0".into()),
+            _ => None,
+        });
+        assert!(m.has_userinfo);
+        assert_eq!(m.expires_at_unix, None);
+        assert_eq!(m.total_bytes, None); // 0 quota = unlimited
+        // An "infinite" panel plan often just OMITS expire — the header is
+        // still authoritative, so stored expiry must be cleared by the client.
+        let m2 = parse_headers(|name| match name {
+            "subscription-userinfo" => Some("upload=1; download=2".into()),
+            _ => None,
+        });
+        assert!(m2.has_userinfo);
+        assert_eq!(m2.expires_at_unix, None);
     }
 
     #[test]

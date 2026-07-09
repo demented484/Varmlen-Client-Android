@@ -362,9 +362,16 @@ class SubsStore {
         );
         return;
       }
-      const totalBytes = result.meta.total_bytes ?? sub.totalBytes;
-      const usedBytes =
-        (result.meta.upload_bytes ?? 0) + (result.meta.download_bytes ?? 0);
+      // A present Subscription-Userinfo header is AUTHORITATIVE: an absent
+      // key means "no quota / never expires" and must CLEAR the stored value
+      // (e.g. a plan upgraded to unlimited previously kept showing the old
+      // expiry forever). Only when the header is missing entirely do we keep
+      // what we knew.
+      const info = result.meta.has_userinfo;
+      const totalBytes = info ? (result.meta.total_bytes ?? 0) : sub.totalBytes;
+      const usedBytes = info
+        ? (result.meta.upload_bytes ?? 0) + (result.meta.download_bytes ?? 0)
+        : sub.usedBytes;
       const freshServers = result.servers.map(toServerEntry);
       this.list = this.list.map((s) =>
         s.id === subId
@@ -377,7 +384,9 @@ class SubsStore {
                 result.meta.update_interval_hours ?? s.updateIntervalHours,
               usedBytes,
               totalBytes,
-              expiresAtUnix: result.meta.expires_at_unix ?? s.expiresAtUnix,
+              expiresAtUnix: info
+                ? (result.meta.expires_at_unix ?? null)
+                : s.expiresAtUnix,
               supportUrl: result.meta.support_url,
               webPageUrl: result.meta.web_page_url,
               importedAt: new Date().toISOString(),
