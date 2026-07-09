@@ -181,6 +181,8 @@
     transition: color var(--transition);
     border-radius: var(--radius-sm);
   }
-  .tab:hover { color: var(--text); }
+  @media (hover: hover) {
+    .tab:hover { color: var(--text); }
+  }
   .tab.active { color: var(--accent); }
 </style>

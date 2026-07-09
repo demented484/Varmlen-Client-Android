@@ -559,8 +559,10 @@
     background: transparent;
     border: none;
   }
-  .icon-btn:hover {
-    background: var(--bg-elev-2);
+  @media (hover: hover) {
+    .icon-btn:hover {
+      background: var(--bg-elev-2);
+    }
   }
   .modal-head {
     display: flex;
@@ -576,8 +578,10 @@
     flex-shrink: 0;
     color: var(--text-muted);
   }
-  .modal-head .icon-btn:hover {
-    color: var(--text);
+  @media (hover: hover) {
+    .modal-head .icon-btn:hover {
+      color: var(--text);
+    }
   }
 
   .scroll {
@@ -624,9 +628,11 @@
       color var(--transition);
     z-index: 1;
   }
-  .power:hover {
-    border-color: var(--border-strong);
-    color: var(--text);
+  @media (hover: hover) {
+    .power:hover {
+      border-color: var(--border-strong);
+      color: var(--text);
+    }
   }
   .power[data-status="connecting"] {
     color: var(--accent);
@@ -684,7 +690,9 @@
     text-decoration: underline;
     cursor: pointer;
   }
-  .link-btn:hover { color: var(--text); }
+  @media (hover: hover) {
+    .link-btn:hover { color: var(--text); }
+  }
 
 
   /* ---------- subscription card ---------- */
@@ -751,9 +759,11 @@
     align-items: center;
     justify-content: center;
   }
-  .head-btn:hover {
-    background: var(--bg-elev-2);
-    color: var(--text);
+  @media (hover: hover) {
+    .head-btn:hover {
+      background: var(--bg-elev-2);
+      color: var(--text);
+    }
   }
   .head-btn.spinning svg {
     animation: spin 900ms linear infinite;
@@ -790,8 +800,10 @@
     color: var(--text);
     font-size: 13px;
   }
-  .menu-item:hover {
-    background: var(--bg-elev-3);
+  @media (hover: hover) {
+    .menu-item:hover {
+      background: var(--bg-elev-3);
+    }
   }
   .menu-item.danger {
     color: var(--danger);
@@ -816,8 +828,10 @@
     justify-content: center;
     flex-shrink: 0;
   }
-  .round-btn:hover {
-    background: var(--accent-faint);
+  @media (hover: hover) {
+    .round-btn:hover {
+      background: var(--accent-faint);
+    }
   }
   .traffic-bar {
     flex: 1;
@@ -898,8 +912,10 @@
     transition: background var(--transition);
   }
   /* Hovering anywhere on the row highlights the whole row. */
-  .srv-row:hover {
-    background: var(--bg-elev-2);
+  @media (hover: hover) {
+    .srv-row:hover {
+      background: var(--bg-elev-2);
+    }
   }
   .srv-btn {
     flex: 1;
@@ -931,8 +947,10 @@
     justify-content: center;
   }
   /* Hovering the arrow itself just makes it brighter — no separate backdrop. */
-  .srv-detail:hover {
-    color: var(--text);
+  @media (hover: hover) {
+    .srv-detail:hover {
+      color: var(--text);
+    }
   }
   .srv-stripe {
     position: absolute;

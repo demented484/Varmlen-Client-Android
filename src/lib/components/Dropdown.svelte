@@ -132,8 +132,10 @@
     font-size: 13px;
     color: var(--text);
   }
-  .trigger:hover {
-    border-color: var(--border-strong);
+  @media (hover: hover) {
+    .trigger:hover {
+      border-color: var(--border-strong);
+    }
   }
   .trigger-text {
     font-weight: 500;
@@ -175,8 +177,10 @@
     font-size: 13px;
     text-align: left;
   }
-  .opt:hover {
-    background: var(--bg-elev-3);
+  @media (hover: hover) {
+    .opt:hover {
+      background: var(--bg-elev-3);
+    }
   }
   .opt.selected {
     color: var(--accent);

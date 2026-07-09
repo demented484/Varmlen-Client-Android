@@ -175,8 +175,10 @@ a {
   background: var(--bg-elev);
   color: var(--text);
 }
-.btn:hover:not(:disabled) {
-  background: var(--bg-elev-2);
+@media (hover: hover) {
+  .btn:hover:not(:disabled) {
+    background: var(--bg-elev-2);
+  }
 }
 .btn-primary {
   background: var(--accent);
@@ -184,18 +186,22 @@ a {
   border-color: var(--accent);
   font-weight: 600;
 }
-.btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+@media (hover: hover) {
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
 }
 .btn-ghost {
   border: none;
   padding: 8px 12px;
   color: var(--text-muted);
 }
-.btn-ghost:hover:not(:disabled) {
-  background: var(--bg-elev-2);
-  color: var(--text);
+@media (hover: hover) {
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--bg-elev-2);
+    color: var(--text);
+  }
 }
 
 .card {
@@ -298,8 +304,10 @@ a {
 .list-row.tappable {
   cursor: pointer;
 }
-.list-row.tappable:hover {
-  background: var(--bg-elev-2);
+@media (hover: hover) {
+  .list-row.tappable:hover {
+    background: var(--bg-elev-2);
+  }
 }
 
 /* ---------- soft fade at the top/bottom of scroll panels ----------

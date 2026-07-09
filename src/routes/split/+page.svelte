@@ -424,7 +424,9 @@
     align-items: center;
     justify-content: center;
   }
-  .trash:hover { color: var(--danger); }
+  @media (hover: hover) {
+    .trash:hover { color: var(--danger); }
+  }
 
 
   /* modal */
@@ -467,9 +469,11 @@
     justify-content: center;
     transition: background var(--transition), color var(--transition);
   }
-  .icon-btn:hover {
-    background: var(--bg-elev-2);
-    color: var(--text);
+  @media (hover: hover) {
+    .icon-btn:hover {
+      background: var(--bg-elev-2);
+      color: var(--text);
+    }
   }
 
   /* Indeterminate scan bar shown under the search while the app list loads. */
@@ -524,8 +528,10 @@
   .picker-row + .picker-row {
     border-top: 1px solid var(--border);
   }
-  .picker-row:hover:not(:disabled) {
-    background: var(--bg-elev-3);
+  @media (hover: hover) {
+    .picker-row:hover:not(:disabled) {
+      background: var(--bg-elev-3);
+    }
   }
   .picker-row:disabled {
     opacity: 0.55;
