@@ -13,6 +13,19 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Release signing: loaded from a key.properties file OUTSIDE this repo (never
+// commit a keystore or its passwords). Path comes from the
+// VARMLEN_KEYSTORE_PROPERTIES env var; if unset or the file is missing,
+// release builds fall back to Android's default debug signing so the build
+// still works for anyone without the release key.
+val releaseSigningProps = Properties().apply {
+    val path = System.getenv("VARMLEN_KEYSTORE_PROPERTIES")
+    if (path != null && file(path).exists()) {
+        file(path).inputStream().use { load(it) }
+    }
+}
+val hasReleaseSigning = releaseSigningProps.getProperty("storeFile") != null
+
 android {
     compileSdk = 36
     namespace = "app.varmlen.client"
@@ -30,6 +43,16 @@ android {
     // exec'd from nativeLibraryDir.
     packaging {
         jniLibs.useLegacyPackaging = true
+    }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseSigningProps.getProperty("storeFile"))
+                storePassword = releaseSigningProps.getProperty("storePassword")
+                keyAlias = releaseSigningProps.getProperty("keyAlias")
+                keyPassword = releaseSigningProps.getProperty("keyPassword")
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -50,6 +73,9 @@ android {
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
                     .toList().toTypedArray()
             )
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     kotlinOptions {
