@@ -118,7 +118,7 @@ async fn fetch_subscription(url: String) -> Result<ImportResult, String> {
     }
 
     let client = reqwest::Client::builder()
-        .user_agent("Varmlen/0.1 (sub-importer)")
+        .user_agent("Varmlen")
         .timeout(Duration::from_secs(15))
         // Validate every redirect hop too, so a 30x can't escape the guard.
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
